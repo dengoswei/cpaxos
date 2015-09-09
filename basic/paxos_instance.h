@@ -10,12 +10,15 @@ namespace paxos {
 class PaxosInstance {
 
 public:
+    PaxosInstance(int group_size, uint64_t prop_num);
     // TODO
+    
+    // normal propose
+    int Propose(const std::string& proposing_value);
+    
     // RETN:
     // true: indicate store state or send out msg;
-    MessageType StepProposer(const Message& msg);
-
-    MessageType StepAcceptor(const Message& msg);
+    MessageType Step(const Message& msg);
 
 private:
     enum class PropState : uint8_t {
@@ -31,13 +34,13 @@ private:
     MessageType updatePropState(PropState next_prop_state);
 
     // proposer
-    PropState beginPreparePhase(uint64_t next_proposed_num);
+    PropState beginPreparePhase();
     PropState beginAcceptPhase();
 
     PropState stepPrepareRsp(
             uint64_t prop_num, 
             uint64_t peer_id, uint64_t peer_promised_num, 
-            uint64_t* peer_accepted_num, 
+            uint64_t peer_accepted_num, 
             const std::string* peer_accepted_value);
 
     PropState stepAcceptRsp(
@@ -50,24 +53,20 @@ private:
     bool updateAccepted(uint64_t prop_num, const std::string& prop_value);
 
 private:
-    const int major_cnt_;
+    const int group_size_;
     PropNumGen prop_num_gen_;
 
-    PropState prop_state_; 
+    PropState prop_state_ = PropState::NIL; 
 
-    bool chosen_;
-    uint64_t index_;
-
-    uint64_t max_accepted_hint_num_;
+    uint64_t max_accepted_hint_num_ = 0;
     std::map<uint64_t, bool> rsp_votes_;
 
     // proposer
-    uint64_t max_proposed_num_;
     std::string proposing_value_;
 
     // acceptor
-    uint64_t promised_num_;
-    uint64_t accepted_num_;
+    uint64_t promised_num_ = 0;
+    uint64_t accepted_num_ = 0;
     std::string accepted_value_;
 };
 

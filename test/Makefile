@@ -4,7 +4,7 @@ CXXFLAGS += -g -Wall -Wextra
 
 
 
-TESTS = utils_test
+TESTS = utils_test paxos_instance_test
 
 INCLS += -I../basic
 LINKS += -lpthread
@@ -18,7 +18,7 @@ BUILDEXE = $(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ $^ $(LINKS)
 all: $(TESTS)
 
 clean :
-	rm -f $(TESTS) gtest.a gtest_main.a *.o
+	rm -f $(TESTS) gtest.a gtest_main.a *.o ../basic/*.o
 
 # Builds gtest.a and gtest_main.a.
 
@@ -48,6 +48,8 @@ gtest_main.a : gtest-all.o gtest_main.o
 utils_test: utils_test.o gtest_main.a
 	$(BUILDEXE)
 
+paxos_instance_test: paxos_instance_test.o ../basic/paxos_instance.o gtest_main.a
+	$(BUILDEXE)
 
 .cc.o:
 	$(CPPCOMPILE)

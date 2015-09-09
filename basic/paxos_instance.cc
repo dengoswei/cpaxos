@@ -12,18 +12,18 @@ void updateRspVotes(
 
     if (rsp_votes.end() != rsp_votes.find(peer_id)) {
         assert(rsp_votes[peer_id] == vote);
-        return 
+        return ;
     }
 
     // else
     rsp_votes[peer_id] = vote;
 }
 
-std::pair<int, int> countVotes(const std::map<uint64_t, bool>& votes)
+std::tuple<int, int> countVotes(const std::map<uint64_t, bool>& votes)
 {
     int true_cnt = 0;
     int false_cnt = 0;
-    for (const auto v& : votes) {
+    for (const auto& v : votes) {
         if (v.second) {
             ++true_cnt;
         } else {
@@ -31,69 +31,74 @@ std::pair<int, int> countVotes(const std::map<uint64_t, bool>& votes)
         }
     }
 
-    return make_pair(true_cnt, false_cnt);
+    return make_tuple(true_cnt, false_cnt);
 }
 
 }
 
 namespace paxos {
 
-enum {
-    HANDLE_OK = 0, 
-    HANDLE_SUCC = 1,
-    HANDLE_RESET = 2, 
-
-    HANDLE_IGNORE = 10, 
-    HANDLE_ERROR = -1, 
-};
-
-
-
-MessageType PaxosInstance::StepProposer(const Message& msg)
+PaxosInstance::PaxosInstance(int major_cnt, uint64_t prop_num)
+    : group_size_(major_cnt)
+    , prop_num_gen_(prop_num)
 {
-    if (PropState::CHOSEN == prop_state_) {
-        return MessageType::CHOSEN;
-    }
-    assert(PropState::NIL != prop_state_);
 
-    PropState next_prop_state = PropState::NIL;
-    switch (msg.type) {
-    case MessageType::PROP_RSP:
-        {
-            assert(PropState::WAIT_PREPARE == prop_state_);
-            next_prop_state = stepPrepareRsp(
-                    msg.prop_num, msg.peer_id, 
-                    msg.promised_num, msg.accepted_num, 
-                    msg.accepted_value);
-        }
-        break;
-    case MessageType::ACCPT_RSP:
-        {
-            assert(PropState::WAIT_ACCEPT == prop_state_);
-            assert(nullptr == msg.accepted_num);
-            assert(nullptr == msg.accepted_value);
-            ret = stepAcceptRsp(msg.prop_num, 
-                    msg.peer_id, msg.promied_num);
-        }
-        break;
-    default:
-        hassert(false, "%s msgtype %u", __func__, msg.type);
-    };
-
-    return updatePropState(next_prop_state);
-    // TODO: 
-    // - 0: nothing
-    // - 1: store state or send msg
 }
 
-MessageType PaxosInstance::StepAcceptor(const Message& msg)
+int PaxosInstance::Propose(const std::string& proposing_value)
 {
+    if (PropState::NIL != prop_state_ || 0 != accepted_num_)  
+    {
+        // refuse to propose if
+        // - prop in this instance before;
+        // - instance have accepted other prop before
+        return -1;
+    }
+
+    assert(PropState::NIL == prop_state_);
+    prop_state_ = PropState::PREPARE;
+    proposing_value_ = proposing_value;
+
+    if (prop_num_gen_.Get() < promised_num_) {
+        uint64_t prev_prop_num = prop_num_gen_.Get();
+        prop_num_gen_.Next(promised_num_);
+        assert(prev_prop_num < prop_num_gen_.Get());
+    }
+    assert(prop_num_gen_.Get() >= promised_num_);
+    prop_state_ = beginPreparePhase();
+    assert(PropState::WAIT_PREPARE == prop_state_);
+    return 0;
+}
+
+MessageType PaxosInstance::Step(const Message& msg)
+{
+    assert(promised_num_ >= accepted_num_);
     if (PropState::CHOSEN == prop_state_) {
         return MessageType::CHOSEN;
     }
 
     MessageType rsp_msg_type = MessageType::UNKOWN;
     switch (msg.type) {
+        // proposer
+    case MessageType::PROP_RSP:
+        {
+            assert(PropState::WAIT_PREPARE == prop_state_);
+            auto next_prop_state = stepPrepareRsp(
+                    msg.prop_num, msg.peer_id, 
+                    msg.promised_num, msg.accepted_num, 
+                    msg.accepted_value);
+            rsp_msg_type = updatePropState(next_prop_state);
+        }
+        break;
+    case MessageType::ACCPT_RSP:
+        {
+            assert(PropState::WAIT_ACCEPT == prop_state_);
+            assert(nullptr == msg.accepted_value);
+            auto next_prop_state = stepAcceptRsp(msg.prop_num, 
+                    msg.peer_id, msg.promised_num);
+            rsp_msg_type = updatePropState(next_prop_state);
+        }
+        break;
     case MessageType::PROP:
         updatePromised(msg.prop_num);
         rsp_msg_type = MessageType::PROP_RSP;
@@ -103,9 +108,11 @@ MessageType PaxosInstance::StepAcceptor(const Message& msg)
         updateAccepted(msg.prop_num, *msg.accepted_value);
         rsp_msg_type = MessageType::ACCPT_RSP;
         break;
+
     default:
         hassert(false, "%s msgtype %u", __func__, msg.type);
-    }
+    };
+
     return rsp_msg_type;
 }
 
@@ -122,8 +129,9 @@ MessageType PaxosInstance::updatePropState(PropState next_prop_state)
         break;
     case PropState::PREPARE:
         {
-            uint64_t next_proposed_num = prop_num_gen_.Next(promised_num_);
-            auto new_state = beginPreparePhase(next_prop_num);
+            prop_num_gen_.Next(promised_num_);
+            assert(prop_num_gen_.Get() >= promised_num_);
+            auto new_state = beginPreparePhase();
             assert(PropState::WAIT_PREPARE == new_state);
             next_prop_state = PropState::WAIT_PREPARE;
             rsp_msg_type = MessageType::PROP; 
@@ -136,26 +144,22 @@ MessageType PaxosInstance::updatePropState(PropState next_prop_state)
             {
                 return updatePropState(PropState::PREPARE);
             }
-            asseert(PropState::WAIT_ACCEPT == new_state);
+            assert(PropState::WAIT_ACCEPT == new_state);
             next_prop_state = PropState::WAIT_ACCEPT;
             rsp_msg_type = MessageType::ACCPT;
         }
         break;
-        break;
     default:
-        hassert("invalid PropState %d", static_cast<int>(next_prop_state));
+        hassert(false, "invalid PropState %d", static_cast<int>(next_prop_state));
     }
     prop_state_ = next_prop_state; 
     return rsp_msg_type;
 }
 
-PropState PaxosInstance::beginPreparePhase(uint64_t next_proposed_num)
+PaxosInstance::PropState PaxosInstance::beginPreparePhase()
 {
-    assert(PROP_PREPARE == prop_state_);
-    assert(false == chosen_);
-    assert(next_proposed_num >= max_proposed_num_);
-
-    bool reject = updatePromised(next_proposed_num);
+    assert(PropState::PREPARE == prop_state_);
+    bool reject = updatePromised(prop_num_gen_.Get());
     if (reject) {
         return PropState::PREPARE;
     }
@@ -168,93 +172,88 @@ PropState PaxosInstance::beginPreparePhase(uint64_t next_proposed_num)
 
     // ignore rsp_votes_[self_id_]
     rsp_votes_.clear();
-    max_proposed_num_ = next_proposed_num;
-    // TODO: 
-    // 1. appendHardState
-    // 2. appendMsg
     return PropState::WAIT_PREPARE;
 }
 
-PropState PaxosInstance::beginAcceptPhase()
+PaxosInstance::PropState PaxosInstance::beginAcceptPhase()
 {
-    assert(PROP_ACCEPT == prop_state_);
-    assert(false == chosen_);
-
-    // max_accepted_hint_num_:
-    // => TODO: how to tell, proposing_value_ is local prop or other peers ?
-    bool reject = updateAccepted(max_proposed_num_, proposing_value_);
+    assert(PropState::ACCEPT == prop_state_);
+    bool reject = updateAccepted(prop_num_gen_.Get(), proposing_value_);
     if (reject) {
         return PropState::PREPARE;
     }
 
     assert(false == reject);
-
     rsp_votes_.clear();
-    // TODO: appendMsg + appendHardState
     return PropState::WAIT_ACCEPT;
 }
 
-PropState PaxosInstance::stepPrepareRsp(
+PaxosInstance::PropState PaxosInstance::stepPrepareRsp(
         uint64_t prop_num, 
         uint64_t peer_id, 
         uint64_t peer_promised_num, 
-        uint64_t* peer_accepted_num, 
+        uint64_t peer_accepted_num, 
         const std::string* peer_accepted_value)
 {
     assert(0 < peer_id);
-    assert(0 < major_cnt_);
+    assert(0 < group_size_);
     assert(PropState::WAIT_PREPARE == prop_state_);
-    if (prop_num != max_proposed_num_) {
+    uint64_t max_proposed_num = prop_num_gen_.Get();
+    if (prop_num != max_proposed_num) {
         // ignore: prop num mis-match
         return PropState::WAIT_PREPARE;
     }
 
     // TODO: assert curr_rsp_votes_[peer_id] == prev_rsp_votes_[peer_id]
     updateRspVotes(peer_id, 
-            max_proposed_num_ >= peer_promised_num, rsp_votes_);
-    if (max_proposed_num_ >= peer_promised_num) {
+            max_proposed_num >= peer_promised_num, rsp_votes_);
+    if (max_proposed_num >= peer_promised_num) {
         // peer promised
-        if (nullptr != peer_accepted_num) {
-            assert(nullptr != peer_accepted_value);
-            if (*peer_accepted_num > max_accepted_hint_num_) {
-                max_accepted_hint_num_ = *peer_accepted_num;
+        if (nullptr != peer_accepted_value) {
+            if (peer_accepted_num > max_accepted_hint_num_) {
+                max_accepted_hint_num_ = peer_accepted_num;
                 proposing_value_ = *peer_accepted_value;
             }
         }
     }
 
-    auto vote_res = countVotes(rsp_votes_);
-    if (vote_res.second >= major_cnt_) {
+    int promise_cnt = 0;
+    int reject_cnt = 0;
+    tie(promise_cnt, reject_cnt) = countVotes(rsp_votes_);
+    if (reject_cnt >= group_size_) {
         // rejected by majority
         return PropState::PREPARE;
         // vote_res.frist + 1 (including self-vote)
-    } else if (vote_res.first + 1 >= major_cnt_) {
+    } else if (promise_cnt + 1 >= group_size_) {
         return PropState::ACCEPT;
     }
     
     return PropState::WAIT_PREPARE;
 }
 
-int PaxosInstance::stepAcceptRsp(
+PaxosInstance::PropState PaxosInstance::stepAcceptRsp(
         uint64_t prop_num, 
         uint64_t peer_id, 
         uint64_t peer_promised_num)
 {
     assert(0 < peer_id);
-    assert(0 < major_cnt_);
+    assert(0 < group_size_);
     assert(PropState::WAIT_ACCEPT == prop_state_);
-
-    if (prop_num != max_proposed_num_) {
+    uint64_t max_proposed_num = prop_num_gen_.Get();
+    if (prop_num != max_proposed_num) {
         // ignore: prop num mis-match
         return PropState::WAIT_ACCEPT;
     }
 
     updateRspVotes(peer_id, 
-            max_proposed_num_ >= peer_promised_num, rsp_votes_);
-    auto vote_res = countVotes(rsp_votes_);
-    if (vote_res.second >= major_cnt_) {
+            max_proposed_num >= peer_promised_num, rsp_votes_);
+
+    int accept_cnt = 0;
+    int reject_cnt = 0;
+    tie(accept_cnt, reject_cnt) = countVotes(rsp_votes_);
+    if (reject_cnt >= group_size_) {
         return PropState::PREPARE;
-    } else if (vote_res.first+1 >= major_cnt_) {
+    } else if (accept_cnt+1 >= group_size_) {
         return PropState::CHOSEN;
     }
 

@@ -1,2 +1,3 @@
 # cpaxos
-boring retry;
+
+so..
