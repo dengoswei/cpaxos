@@ -3,6 +3,8 @@
 #include <tuple>
 #include <string>
 #include <algorithm>
+#include <random>
+#include <limits>
 #include <cstdio>
 #include <cassert>
 #include <stdint.h>
@@ -19,6 +21,9 @@
     assert(bCond);                                  \
 }
 
+#define logdebug(format, ...) \
+    printf("[%s] PAXOS " format "\n", , ##__VA_ARGS__)
+
 namespace paxos {
 
 enum class MessageType : uint32_t {
@@ -33,14 +38,14 @@ enum class MessageType : uint32_t {
 };
 
 struct Message {
-    Message() = default;
+//    Message() = default;
 
-    MessageType type;
-    uint64_t prop_num;
-    uint64_t peer_id;
-    uint64_t promised_num;
-    uint64_t accepted_num;
-    const std::string* accepted_value;
+    MessageType type = MessageType::UNKOWN;
+    uint64_t prop_num = 0;
+    uint64_t peer_id = 0;
+    uint64_t promised_num = 0;
+    uint64_t accepted_num = 0;
+    const std::string* accepted_value = nullptr;
 };
 
 
@@ -65,7 +70,7 @@ public:
         assert(0 != selfid_);
     }
 
-    uint64_t Get()
+    uint64_t Get() const
     {
         return prop_num_compose(selfid_, prop_cnt_);
     }
@@ -101,6 +106,61 @@ private:
 };
 
 
+// utils for test
+
+template <typename RNGType,
+         typename INTType,
+         INTType iMin=0, INTType iMax=std::numeric_limits<INTType>::max()>
+class RandomIntGen
+{
+public:
+    RandomIntGen()
+        : m_tUDist(iMin, iMax)
+    {
+        m_tMyRNG.seed(time(NULL));
+    }
+
+    INTType Next()
+    {
+        return m_tUDist(m_tMyRNG);
+    }
+
+private:
+    RNGType m_tMyRNG;
+    std::uniform_int_distribution<INTType> m_tUDist;
+};
+
+typedef RandomIntGen<std::mt19937_64, uint64_t> Random64BitGen;
+typedef RandomIntGen<std::mt19937, uint32_t> Random32BitGen;
+
+static const char DICTIONARY[] =
+    "0123456789"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz";
+
+
+template <int iMin, int iMax>
+class RandomStrGen
+{
+public:
+    std::string Next()
+    {
+        auto iLen = m_tRLen.Next();
+        std::string s;
+        s.resize(iLen);
+        for (auto i = 0; i < iLen; ++i)
+        {
+            auto j = m_tRIdx.Next();
+            s[i] = DICTIONARY[j];
+            assert(s[i] != '\0');
+        }
+        return s;
+    }
+
+private:
+    RandomIntGen<std::mt19937, int, iMin, iMax> m_tRLen;
+    RandomIntGen<std::mt19937, int, 0, sizeof(DICTIONARY)-2> m_tRIdx;
+};
 
 } // namespace paxos
 

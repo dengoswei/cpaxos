@@ -5,35 +5,36 @@
 #include <map>
 #include "utils.h"
 
-namespace paxos {
+// private
+namespace paxos_impl {
 
-class PaxosInstance {
+enum class PropState : uint8_t {
+    NIL = 0, 
+    PREPARE, 
+    WAIT_PREPARE, 
+    ACCEPT, 
+    WAIT_ACCEPT, 
+    CHOSEN, 
+};
+
+class PaxosInstanceImpl {
 
 public:
-    PaxosInstance(int group_size, uint64_t prop_num);
-    // TODO
-    
-    // normal propose
-    int Propose(const std::string& proposing_value);
-    
-    // RETN:
-    // true: indicate store state or send out msg;
-    MessageType Step(const Message& msg);
+    PaxosInstanceImpl(int major_cnt, uint64_t prop_num);
 
-private:
-    enum class PropState : uint8_t {
-        NIL = 0, 
-        PREPARE, 
-        WAIT_PREPARE, 
-        ACCEPT, 
-        WAIT_ACCEPT, 
-        CHOSEN, 
-    };
+    paxos::MessageType step(const paxos::Message& msg);
 
-private:
-    MessageType updatePropState(PropState next_prop_state);
+    paxos::MessageType updatePropState(PropState next_prop_state);
+
+    // const function
+    PropState getPropState() const { return prop_state_; }
+    uint64_t getProposeNum() const { return prop_num_gen_.Get(); }
+    uint64_t getPromisedNum() const { return promised_num_; }
+    uint64_t getAcceptedNum() const { return accepted_num_; }
+    const std::string& getAcceptedValue() const { return accepted_value_; }
 
     // proposer
+    int beginPropose(const std::string& proposing_value);
     PropState beginPreparePhase();
     PropState beginAcceptPhase();
 
@@ -47,14 +48,13 @@ private:
             uint64_t prop_num, 
             uint64_t peer_id, uint64_t peer_promised_num);
 
-
     // acceptor
     bool updatePromised(uint64_t prop_num);
     bool updateAccepted(uint64_t prop_num, const std::string& prop_value);
 
 private:
-    const int group_size_;
-    PropNumGen prop_num_gen_;
+    const int major_cnt_;
+    paxos::PropNumGen prop_num_gen_;
 
     PropState prop_state_ = PropState::NIL; 
 
@@ -70,4 +70,22 @@ private:
     std::string accepted_value_;
 };
 
-} // namespace cpaxos
+} // namespace paxos_impl
+
+// public
+namespace paxos {
+
+class PaxosInstance {
+
+public: 
+    PaxosInstance(int group_size, uint64_t prop_num);
+
+    int Propose(const std::string& proposing_value);
+
+    MessageType Step(const Message& msg);
+
+private:
+    paxos_impl::PaxosInstanceImpl ins_impl_;
+};
+
+} // namespace paxos

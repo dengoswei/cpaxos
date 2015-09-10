@@ -12,3 +12,11 @@ TEST(TestPropNumGen, SimpleTest)
     ASSERT_EQ((5 << 8) + 2, prop_num_gen.Next((4 << 8) + 3));
 }
 
+TEST(TestRandom, SimpleTest)
+{
+    RandomStrGen<10, 20> sgen;
+    auto s = sgen.Next();
+    ASSERT_LE(10, s.size());
+    ASSERT_GE(20, s.size());
+}
+
