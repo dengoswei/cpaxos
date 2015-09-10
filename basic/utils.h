@@ -22,7 +22,7 @@
 }
 
 #define logdebug(format, ...) \
-    printf("[%s] PAXOS " format "\n", , ##__VA_ARGS__)
+    printf("[PAXOS] " format "\n", ##__VA_ARGS__)
 
 namespace paxos {
 
@@ -47,6 +47,7 @@ struct Message {
     uint64_t accepted_num = 0;
     const std::string* accepted_value = nullptr;
 };
+
 
 
 inline uint64_t prop_num_compose(uint8_t id, uint64_t prop_cnt)

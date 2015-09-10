@@ -28,3 +28,11 @@ message Entry {
 };
 
 
+message HardState {
+    required uint64 index = 1;
+    required uint64 proposed_num = 2;
+    optional uint64 promised_num = 3;
+    optional uint64 accepted_num = 5;
+    optional bytes accepted_value = 6;
+};
+

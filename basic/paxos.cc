@@ -1,0 +1,148 @@
+#include "paxos.h"
+
+
+using namespace std;
+
+namespace {
+
+using namespace paxos;
+
+std::unique_ptr<PaxosInstance> buildPaxosInstance(
+        size_t peer_set_size, uint64_t selfid, uint64_t prop_cnt)
+{
+    const int major_cnt = static_cast<int>(peer_set_.size())/2 + 1;
+    assert(0 < major_cnt);
+    assert(0 < selfid);
+    
+    uint64_t prop_num = prop_num_compose(selfid, prop_cnt); 
+    assert(0 < prop_num);
+    auto new_ins = unique_ptr<PaxosInstance>{
+        new PaxosInstance{major_cnt, prop_num}};
+    assert(nullptr != new_ins);
+    return new_ins;
+}
+
+std::unique_ptr<proto::HardState> 
+createHardState(uint64_t index, const PaxosInstance* ins)
+{
+    assert(0 < index);
+    assert(nullptr != ins);
+    auto hs = unique_ptr<proto::HardState>{new proto::HardState};
+    assert(nullptr != hs);
+
+    hs->set_index();
+    hs->set_proposed_num(ins->GetProposeNum());
+    hs->set_promised_num(ins->GetPromisedNum());
+    hs->set_accepted_num(ins->GetAcceptedNum());
+    hs->set_accepted_value(ins->GetAcceptedValue());
+    return hs;
+}
+
+
+} // namespace
+
+
+namespace paxos {
+
+std::tuple<int, uint64_t> 
+    Paxos::Propose(const std::string& proposing_value)
+{
+    lock_guard<mutex> lock(paxos_mutex_);
+    if (max_index_ != commited_index_) {
+        return make_tuple(-1, 0);
+    }
+
+    auto new_ins = buildPaxosInstance(peer_set_.size(), selfid_, 0);
+    assert(nullptr != new_ins);
+    int ret = new_ins->Propose(proposing_value);
+    assert(0 == ret); // always ret 0 on new PaxosInstance 
+    
+    uint64_t new_index = max_index_ + 1;
+    assert(ins_map_.end() == ins_map_.find(max_index_+1));
+    ins_map_[max_index_+1] = move(new_ins);
+    assert(nullptr == new_ins);
+    ++max_index_;
+    return make_tuple(0, max_index_);
+}
+
+
+int Paxos::Step(uint64_t index, const Message& msg, StepCallback callback)
+{
+    string accepted_value_buf;
+    unique_ptr<proto::HardState> hs;
+    unique_ptr<Message> rsp_msg;
+    {
+        lock_guard<mutex> lock(paxos_mutex_);
+        // check index with commited_index_, max_index_
+        assert(commited_index_ <= max_index_);
+        if (index <= commited_index_) {
+            // msg on commited_index
+            return 1;
+        }
+
+        if (ins_map_.end() == ins_map_.find(index)) {
+            // need build a new paxos instance
+            auto new_ins = 
+                buildPaxosInstance(peer_set_.size(), selfid_, 0);
+            assert(nullptr != new_ins);
+            ins_map_[index] = move(new_ins);
+            assert(nullptr == new_ins);
+            max_index_ = max(max_index_, index);
+        }
+
+        PaxosInstance* ins = ins_map_[index].get();
+        assert(nullptr != ins);
+
+        auto rsp_msg_type = ins->Step(msg);
+        switch (rsp_msg_type) {
+        case MessageType::PROP:
+            hs = createHardState(index, ins);
+            assert(nullptr != hs);
+
+            rsp_msg = unique_ptr<Message>{new Message};
+            rsp_msg->type = MessageType::PROP;
+            rsp_msg->prop_num = hs->proposed_num();
+            rsp_msg->peer_id = selfid_;
+            break;
+        case MessageType::ACCPT:
+            hs = createHardState(index, ins);
+            assert(nullptr != hs);
+
+            rsp_msg = unique_ptr<Message>{new Message};
+            assert(nullptr != rsp_msg);
+            rsp_msg->type = MessageType::ACCPT;
+            rsp_msg->prop_num = hs->proposed_num();
+            rsp_msg->accepted_value = &(hs->accepted_value());
+            assert(nullptr != rsp_msg->accepted_value);
+            break;
+        case MessageType::CHOSEN:
+            rsp_msg = unique_ptr<Message>{new Message};
+            assert(nullptr != rsp_msg);
+            rsp_msg->type = MessageType::CHOSEN;
+            rsp_msg->prop_num = ins->GetProposeNum();
+            rsp_msg->accepted_num = ins->GetAcceptedNum(); 
+            accepted_value_buf = ins->GetAcceptedValue();
+            rsp_msg->accepted_value = &accepted_value_buf;
+            assert(nullptr != rsp_msg->accepted_value);
+            break;
+        default:
+            // do nothing
+            break;
+        }
+    }
+
+    int ret = callback(index, commited_index_, hs, rsp_msg);
+    if (0 != ret) {
+        // error case
+        return ret;
+    }
+
+    assert(0 == ret);
+    // TODO: may update commited_index_ stat;
+    return 0;
+}
+
+
+} // namspace paxos
+
+

@@ -36,7 +36,9 @@ std::tuple<int, int> countVotes(const std::map<uint64_t, bool>& votes)
 
 }
 
-namespace paxos_impl {
+namespace paxos {
+
+namespace impl {
 
 PaxosInstanceImpl::PaxosInstanceImpl(int major_cnt, uint64_t prop_num)
     : major_cnt_(major_cnt)
@@ -65,7 +67,8 @@ paxos::MessageType PaxosInstanceImpl::step(const paxos::Message& msg)
                     msg.accepted_value);
             rsp_msg_type = updatePropState(next_prop_state);
             logdebug("%s next_prop_state %d rsp_msg_type %d", 
-                    __func__, static_cast<int>(next_prop_state), static_cast<int>(rsp_msg_type));
+                    __func__, static_cast<int>(next_prop_state), 
+                    static_cast<int>(rsp_msg_type));
         }
         break;
     case MessageType::ACCPT_RSP:
@@ -75,7 +78,8 @@ paxos::MessageType PaxosInstanceImpl::step(const paxos::Message& msg)
             auto next_prop_state = stepAcceptRsp(
                     msg.prop_num, msg.peer_id, msg.accepted_num);
             rsp_msg_type = updatePropState(next_prop_state);
-            logdebug("%s rsp_msg_type %d\n", __func__, static_cast<int>(rsp_msg_type));
+            logdebug("%s rsp_msg_type %d\n", 
+                    __func__, static_cast<int>(rsp_msg_type));
         }
         break;
     case MessageType::PROP:
@@ -116,7 +120,8 @@ PaxosInstanceImpl::updatePropState(PropState next_prop_state)
             auto new_state = beginPreparePhase();
             assert(PropState::WAIT_PREPARE == new_state);
 
-            auto tmp_rsp_msg_type = updatePropState(PropState::WAIT_PREPARE);
+            auto tmp_rsp_msg_type = 
+                updatePropState(PropState::WAIT_PREPARE);
             assert(MessageType::NOOP == tmp_rsp_msg_type);
             assert(PropState::WAIT_PREPARE == prop_state_);
             rsp_msg_type = MessageType::PROP; 
@@ -131,14 +136,17 @@ PaxosInstanceImpl::updatePropState(PropState next_prop_state)
             }
             assert(PropState::WAIT_ACCEPT == new_state);
 
-            auto tmp_rsp_msg_type = updatePropState(PropState::WAIT_ACCEPT);
+            auto tmp_rsp_msg_type = 
+                updatePropState(PropState::WAIT_ACCEPT);
             assert(MessageType::NOOP == tmp_rsp_msg_type);
             assert(PropState::WAIT_ACCEPT == prop_state_);
             rsp_msg_type = MessageType::ACCPT;
         }
         break;
     default:
-        hassert(false, "invalid PropState %d", static_cast<int>(next_prop_state));
+        hassert(false, "invalid PropState %d", 
+                static_cast<int>(next_prop_state));
+        break;
     }
     return rsp_msg_type;
 }
@@ -306,11 +314,8 @@ bool PaxosInstanceImpl::updateAccepted(
 
 
 
-} // namespace paxos_impl 
+} // namespace impl 
 
-
-
-namespace paxos {
 
 
 PaxosInstance::PaxosInstance(int major_cnt, uint64_t prop_num)
@@ -329,6 +334,8 @@ MessageType PaxosInstance::Step(const Message& msg)
 {
     return ins_impl_.step(msg);
 }
+
+
 
 } // namespace paxos
 

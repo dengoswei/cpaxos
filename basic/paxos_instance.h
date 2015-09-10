@@ -5,8 +5,11 @@
 #include <map>
 #include "utils.h"
 
+// public
+namespace paxos {
+
 // private
-namespace paxos_impl {
+namespace impl {
 
 enum class PropState : uint8_t {
     NIL = 0, 
@@ -70,22 +73,28 @@ private:
     std::string accepted_value_;
 };
 
-} // namespace paxos_impl
+} // namespace impl
 
-// public
-namespace paxos {
 
 class PaxosInstance {
 
 public: 
-    PaxosInstance(int group_size, uint64_t prop_num);
+    PaxosInstance(int major_cnt, uint64_t prop_num);
 
     int Propose(const std::string& proposing_value);
 
     MessageType Step(const Message& msg);
 
+    uint64_t GetProposeNum() const { return ins_impl_.getProposeNum(); }
+    uint64_t GetPromisedNum() const { return ins_impl_.getPromisedNum(); }
+    uint64_t GetAcceptedNum() const { return ins_impl_.getAcceptedNum(); }
+    const std::string& GetAcceptedValue() const { 
+        return ins_impl_.getAcceptedValue(); 
+    }
+
+
 private:
-    paxos_impl::PaxosInstanceImpl ins_impl_;
+    impl::PaxosInstanceImpl ins_impl_;
 };
 
 } // namespace paxos
