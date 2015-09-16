@@ -71,6 +71,9 @@ int Paxos::Step(uint64_t index, const Message& msg, StepCallback callback)
     string accepted_value_buf;
     unique_ptr<proto::HardState> hs;
     unique_ptr<Message> rsp_msg;
+
+    bool update_index = false;
+    // 1.
     {
         lock_guard<mutex> lock(paxos_mutex_);
         // check index with commited_index_, max_index_
@@ -94,43 +97,13 @@ int Paxos::Step(uint64_t index, const Message& msg, StepCallback callback)
         assert(nullptr != ins);
 
         auto rsp_msg_type = ins->Step(msg);
-        switch (rsp_msg_type) {
-        case MessageType::PROP:
-            hs = createHardState(index, ins);
-            assert(nullptr != hs);
-
-            rsp_msg = unique_ptr<Message>{new Message};
-            rsp_msg->type = MessageType::PROP;
-            rsp_msg->prop_num = hs->proposed_num();
-            rsp_msg->peer_id = selfid_;
-            break;
-        case MessageType::ACCPT:
-            hs = createHardState(index, ins);
-            assert(nullptr != hs);
-
-            rsp_msg = unique_ptr<Message>{new Message};
-            assert(nullptr != rsp_msg);
-            rsp_msg->type = MessageType::ACCPT;
-            rsp_msg->prop_num = hs->proposed_num();
-            rsp_msg->accepted_value = &(hs->accepted_value());
-            assert(nullptr != rsp_msg->accepted_value);
-            break;
-        case MessageType::CHOSEN:
-            rsp_msg = unique_ptr<Message>{new Message};
-            assert(nullptr != rsp_msg);
-            rsp_msg->type = MessageType::CHOSEN;
-            rsp_msg->prop_num = ins->GetProposeNum();
-            rsp_msg->accepted_num = ins->GetAcceptedNum(); 
-            accepted_value_buf = ins->GetAcceptedValue();
-            rsp_msg->accepted_value = &accepted_value_buf;
-            assert(nullptr != rsp_msg->accepted_value);
-            break;
-        default:
-            // do nothing
-            break;
+        tie(hs, rsp_msg, accepted_value_buf) = produceRsp(ins, rsp_msg_type);
+        if (commited_index_ < next_commited_index_) {
+            update_index = true;
         }
     }
 
+    // 2.
     int ret = callback(index, commited_index_, hs, rsp_msg);
     if (0 != ret) {
         // error case
@@ -138,7 +111,107 @@ int Paxos::Step(uint64_t index, const Message& msg, StepCallback callback)
     }
 
     assert(0 == ret);
-    // TODO: may update commited_index_ stat;
+    if (false == update_index) {
+        return 0;
+    }
+
+    // 3.
+    {
+        lock_guard<mutex> lock(paxos_mutex_);
+        // double check
+        if (commited_index_ >= next_commited_index_) {
+            return 0;
+        }
+
+        commited_index_ = next_commited_index_;
+        logdebug("commited_index_ %" PRIu64 " next_commited_index_ %" 
+                PRIu64 "\n", commited_index_, next_commited_index_);
+        // TODO: store commited_index_ ?
+    }
+
+    // 3. notify_all under unlock!
+    paxos_cv_.notify_all();
+    return 0;
+}
+
+std::tuple<
+    std::unique_ptr<proto::HardState>, 
+    std::unique_ptr<Message>, 
+    std::string>
+Paxos::produceRsp(
+        uint64_t index, 
+        const PaxosInstance* ins, MessageType rsp_msg_type)
+{
+    assert(nullptr != ins);
+    string accepted_value_buf;
+    unique_ptr<proto::HardState> hs;
+    unique_ptr<Message> rsp_msg;
+
+    switch (rsp_msg_type) {
+    case MessageType::PROP:
+        hs = createHardState(index, ins);
+        assert(nullptr != hs);
+
+        rsp_msg = unique_ptr<Message>{new Message};
+        rsp_msg->type = MessageType::PROP;
+        rsp_msg->prop_num = hs->proposed_num();
+        rsp_msg->peer_id = selfid_;
+        break;
+    case MessageType::ACCPT:
+        hs = createHardState(index, ins);
+        assert(nullptr != hs);
+
+        rsp_msg = unique_ptr<Message>{new Message};
+        assert(nullptr != rsp_msg);
+        rsp_msg->type = MessageType::ACCPT;
+        rsp_msg->prop_num = hs->proposed_num();
+        rsp_msg->accepted_value = &(hs->accepted_value());
+        assert(nullptr != rsp_msg->accepted_value);
+        break;
+    case MessageType::CHOSEN:
+        // mark index as chosen
+        chosen_set_.insert(index);
+        rsp_msg = unique_ptr<Message>{new Message};
+        assert(nullptr != rsp_msg);
+        rsp_msg->type = MessageType::CHOSEN;
+        rsp_msg->prop_num = ins->GetProposeNum();
+        rsp_msg->accepted_num = ins->GetAcceptedNum(); 
+        accepted_value_buf = ins->GetAcceptedValue();
+        rsp_msg->accepted_value = &accepted_value_buf;
+        assert(nullptr != rsp_msg->accepted_value);
+
+        // update next_commited_index_
+        hassert(next_commited_index_ >= commited_index_, 
+                "commited_index_ %" PRIu64 "next_commited_index_ %" PRIu64, 
+                commited_index_, next_commited_index_);
+        if (index > next_commited_index_) {
+            chosen_set_.insert(index);
+            for (auto next = next_commited_index_ + 1; 
+                    next <= max_index_; ++next) {
+                if (0 == chosen_set_.count(next)) {
+                    break;
+                }
+                next_commited_index_ = next;
+                chosen_set_.erase(next);
+            }
+        }
+
+        break;
+    default:
+        hassert(false, "%s rsp_msg_type %u", __func__, 
+                static_cast<int>(rsp_msg_type));
+        // do nothing
+        break;
+    }
+
+    return make_tuple(hs, rsp_msg, accepted_value_buf);
+}
+
+int Paxos::Wait(uint64_t index)
+{
+    unique_lock<mutex> lock(paxos_mutex_);
+    paxos_cv_.wait(lock, []{ return index <= commited_index_; });
+
     return 0;
 }
 
