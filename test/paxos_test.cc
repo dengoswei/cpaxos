@@ -83,6 +83,9 @@ TEST_F(PaxosTest, SimpleImplPropose)
         vecMsg.clear();
         assert(MessageType::PROP == req_msg.type);
         assert(index == req_index);
+        assert(0 == req_msg.to_id);
+        req_msg.to_id = q->GetSelfId();
+        assert(0 != req_msg.to_id);
         ret = q->Step(req_index, req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
     }
@@ -108,7 +111,9 @@ TEST_F(PaxosTest, SimpleImplPropose)
         vecMsg.clear();
         assert(MessageType::ACCPT == req_msg.type);
         assert(index == req_index);
-
+        assert(0 == req_msg.to_id);
+        req_msg.to_id = q->GetSelfId();
+        assert(0 != req_msg.to_id);
         ret = q->Step(req_index, req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
     }
@@ -137,7 +142,16 @@ TEST_F(PaxosTest, SimpleImplPropose)
         vecMsg.clear();
         assert(MessageType::CHOSEN == req_msg.type);
         assert(index == req_index);
-        // TODO
+        assert(0 == req_msg.to_id);
+        req_msg.to_id = q->GetSelfId();
+        assert(0 != req_msg.to_id);
+
+        ret = q->Step(req_index, req_msg, callback);
+        hassert(0 == ret, "Paxos::Step ret %d", ret);
+
+        assert(true == vecMsg.empty());
+        uint64_t commited_index = q->GetCommitedIndex();
+        assert(commited_index == index);
     }
 
 }

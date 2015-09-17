@@ -77,8 +77,10 @@ std::tuple<int, uint64_t>
         assert(nullptr == new_ins);
         ++max_index_;
 
+        Message fake_msg;
+        fake_msg.to_id = selfid_;
         tie(hs, rsp_msg) = produceRsp(
-                new_index, ins_map_[new_index].get(), Message{}, MessageType::PROP);
+                new_index, ins_map_[new_index].get(), fake_msg, MessageType::PROP);
     }
 
     assert(0 < new_index);
@@ -100,7 +102,7 @@ int Paxos::Step(uint64_t index, const Message& msg, Callback callback)
     unique_ptr<proto::HardState> hs;
     unique_ptr<Message> rsp_msg;
 
-    bool update_index = false;
+    bool update = false;
     // 1.
     {
         lock_guard<mutex> lock(paxos_mutex_);
@@ -127,25 +129,44 @@ int Paxos::Step(uint64_t index, const Message& msg, Callback callback)
         auto rsp_msg_type = ins->Step(msg);
         tie(hs, rsp_msg) = produceRsp(index, ins, msg, rsp_msg_type);
         if (commited_index_ < next_commited_index_) {
-            update_index = true;
+            update = true;
+        }
+
+        if (pending_hs_.end() != pending_hs_.find(index)) {
+            if (nullptr != hs) {
+                hs = createHardState(index, ins);
+            }
+            assert(nullptr != hs);
+            update = true;
         }
     }
 
     // 2.
     int ret = callback(index, hs, rsp_msg);
     if (0 != ret) {
-        // error case
+        if (nullptr != hs && false == update) {
+            lock_guard<mutex> lock(paxos_mutex_);
+            pending_hs_.insert(index);
+        }
+        // error case: TODO
+        // => IMPT: in-case of store hs failed ???
+        //    => hs re-restore need be done!!!!
         return ret;
     }
 
+
     assert(0 == ret);
-    if (false == update_index) {
+    if (false == update) {
         return 0;
     }
 
     // 3.
     {
         lock_guard<mutex> lock(paxos_mutex_);
+        if (pending_hs_.end() != pending_hs_.find(index)) {
+            pending_hs_.erase(index);
+        }
+
         // double check
         if (commited_index_ >= next_commited_index_) {
             return 0;
@@ -172,6 +193,10 @@ Paxos::produceRsp(
         MessageType rsp_msg_type)
 {
     assert(nullptr != ins);
+    hassert(req_msg.to_id == selfid_, "type %d req_msg.to_id %" 
+            PRIu64 " selfid_ %" PRIu64 "\n", 
+            static_cast<int>(req_msg.type), req_msg.to_id, selfid_);
+
     unique_ptr<proto::HardState> hs;
     unique_ptr<Message> rsp_msg;
 
@@ -185,6 +210,7 @@ Paxos::produceRsp(
         rsp_msg->type = MessageType::PROP;
         rsp_msg->prop_num = hs->proposed_num();
         rsp_msg->peer_id = selfid_;
+        rsp_msg->to_id = 0; // broad cast;
         break;
     case MessageType::PROP_RSP:
         rsp_msg = unique_ptr<Message>{new Message};
@@ -192,6 +218,7 @@ Paxos::produceRsp(
         rsp_msg->type = MessageType::PROP_RSP;
         rsp_msg->prop_num = req_msg.prop_num;
         rsp_msg->peer_id = selfid_;
+        rsp_msg->to_id = req_msg.peer_id;
         rsp_msg->promised_num = ins->GetPromisedNum();
         assert(rsp_msg->promised_num >= rsp_msg->prop_num);
         if (req_msg.prop_num == rsp_msg->promised_num) {
@@ -209,6 +236,7 @@ Paxos::produceRsp(
         rsp_msg->type = MessageType::ACCPT;
         rsp_msg->prop_num = hs->proposed_num();
         rsp_msg->peer_id = selfid_;
+        rsp_msg->to_id = 0; // broadcast
         rsp_msg->accepted_value = hs->accepted_value();
         break;
     case MessageType::ACCPT_RSP:
@@ -217,20 +245,26 @@ Paxos::produceRsp(
         rsp_msg->type = MessageType::ACCPT_RSP;
         rsp_msg->prop_num = req_msg.prop_num;
         rsp_msg->peer_id = selfid_;
+        rsp_msg->to_id = req_msg.peer_id;
         rsp_msg->promised_num = ins->GetPromisedNum();
         rsp_msg->accepted_num = ins->GetAcceptedNum();
         break;
     case MessageType::CHOSEN:
         // mark index as chosen
-        chosen_set_.insert(index);
-        rsp_msg = unique_ptr<Message>{new Message};
-        assert(nullptr != rsp_msg);
-        rsp_msg->type = MessageType::CHOSEN;
-        rsp_msg->prop_num = req_msg.prop_num;
-        rsp_msg->peer_id = selfid_;
-        rsp_msg->promised_num = ins->GetPromisedNum();
-        rsp_msg->accepted_num = ins->GetAcceptedNum(); 
-        rsp_msg->accepted_value = ins->GetAcceptedValue();
+        if (MessageType::CHOSEN != req_msg.type) {
+            rsp_msg = unique_ptr<Message>{new Message};
+            assert(nullptr != rsp_msg);
+            rsp_msg->type = MessageType::CHOSEN;
+            rsp_msg->prop_num = req_msg.prop_num;
+            rsp_msg->peer_id = selfid_;
+            rsp_msg->to_id = 0; // broadcast
+            rsp_msg->promised_num = ins->GetPromisedNum();
+            rsp_msg->accepted_num = ins->GetAcceptedNum(); 
+            if (rsp_msg->accepted_num != req_msg.accepted_num) {
+                rsp_msg->accepted_value = ins->GetAcceptedValue();
+            }
+        }
+        // else => no rsp
 
         // update next_commited_index_
         hassert(next_commited_index_ >= commited_index_, 
@@ -248,6 +282,26 @@ Paxos::produceRsp(
             }
         }
 
+        break;
+    case MessageType::UNKOWN:
+        if (MessageType::CHOSEN == req_msg.type) {
+            assert(req_msg.accepted_num != ins->GetAcceptedNum());
+
+            // else=> store
+            hs = createHardState(index, ins);
+            assert(nullptr != hs);
+
+            // rsp_msg for self
+            rsp_msg = unique_ptr<Message>{new Message};
+            assert(nullptr != rsp_msg);
+            rsp_msg->type = MessageType::CHOSEN;
+            rsp_msg->prop_num = ins->GetProposeNum(); 
+            rsp_msg->peer_id = selfid_;
+            rsp_msg->to_id = selfid_; // self-call after succ store hs;
+            rsp_msg->promised_num = ins->GetPromisedNum();
+            rsp_msg->accepted_num = ins->GetAcceptedNum();
+        }
+        // else => ignore
         break;
     default:
         hassert(false, "%s rsp_msg_type %u", __func__, 

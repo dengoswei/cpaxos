@@ -90,6 +90,31 @@ paxos::MessageType PaxosInstanceImpl::step(const paxos::Message& msg)
         updateAccepted(msg.prop_num, msg.accepted_value);
         rsp_msg_type = MessageType::ACCPT_RSP;
         break;
+    case MessageType::CHOSEN:
+        {
+            if (msg.accepted_num == accepted_num_) {
+                // mark as chosen
+                rsp_msg_type = updatePropState(PropState::CHOSEN);
+                break;
+            }
+
+            assert(false == msg.accepted_value.empty());
+
+            // reset
+            if (prop_num_gen_.Get() < promised_num_) {
+                uint64_t prev_prop_num = prop_num_gen_.Get();
+                prop_num_gen_.Next(promised_num_);
+                assert(prev_prop_num < prop_num_gen_.Get());
+            }
+
+            // self promised
+            assert(false == updatePromised(prop_num_gen_.Get()));
+            // self accepted
+            assert(false == updateAccepted(
+                        prop_num_gen_.Get(), msg.accepted_value));
+            updatePropState(PropState::CHOSEN);
+        }
+        break;
 
     default:
         hassert(false, "%s msgtype %u", __func__, msg.type);

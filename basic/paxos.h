@@ -27,7 +27,7 @@ class PaxosInstance;
 class Paxos {
 
 public:
-    Paxos(uint64_t selfid_);
+    Paxos(uint64_t selfid);
 
     typedef std::function<int(
             uint64_t,
@@ -42,8 +42,10 @@ public:
 
     uint64_t GetMaxIndex() { return max_index_; }
     uint64_t GetCommitedIndex() { return commited_index_; }
+    uint64_t GetSelfId() { return selfid_; }
 
     int Wait(uint64_t index);
+
 
 private:
     std::tuple<
@@ -65,6 +67,7 @@ private:
     uint64_t commited_index_ = 0;
     uint64_t next_commited_index_ = 0;
     std::set<uint64_t> chosen_set_;
+    std::set<uint64_t> pending_hs_;
     std::map<uint64_t, std::unique_ptr<PaxosInstance>> ins_map_;
 };
 

@@ -45,6 +45,7 @@ struct Message {
     MessageType type = MessageType::UNKOWN;
     uint64_t prop_num = 0;
     uint64_t peer_id = 0;
+    uint64_t to_id = 0;
     uint64_t promised_num = 0;
     uint64_t accepted_num = 0;
     std::string accepted_value;
