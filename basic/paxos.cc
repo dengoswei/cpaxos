@@ -44,31 +44,54 @@ createHardState(uint64_t index, const PaxosInstance* ins)
 
 namespace paxos {
 
-std::tuple<int, uint64_t> 
-    Paxos::Propose(const std::string& proposing_value)
+Paxos::Paxos(uint64_t selfid)
+    : selfid_(selfid)
 {
-    lock_guard<mutex> lock(paxos_mutex_);
-    if (max_index_ != commited_index_) {
-        return make_tuple(-1, 0);
+
+}
+
+std::tuple<int, uint64_t> 
+    Paxos::Propose(const std::string& proposing_value, Callback callback)
+{
+    unique_ptr<proto::HardState> hs;
+    unique_ptr<Message> rsp_msg;
+
+    {
+        lock_guard<mutex> lock(paxos_mutex_);
+        if (max_index_ != commited_index_) {
+            return make_tuple(-1, 0);
+        }
+
+        auto new_ins = buildPaxosInstance(peer_set_.size(), selfid_, 0);
+        assert(nullptr != new_ins);
+        int ret = new_ins->Propose(proposing_value);
+        assert(0 == ret); // always ret 0 on new PaxosInstance 
+        
+        uint64_t new_index = max_index_ + 1;
+        assert(ins_map_.end() == ins_map_.find(max_index_+1));
+        ins_map_[max_index_+1] = move(new_ins);
+        assert(nullptr == new_ins);
+        ++max_index_;
+
+        tie(hs, rsp_msg) = produceRsp(
+                new_index, ins.get(), Message{}, MessageType::PROP);
     }
 
-    auto new_ins = buildPaxosInstance(peer_set_.size(), selfid_, 0);
-    assert(nullptr != new_ins);
-    int ret = new_ins->Propose(proposing_value);
-    assert(0 == ret); // always ret 0 on new PaxosInstance 
-    
-    uint64_t new_index = max_index_ + 1;
-    assert(ins_map_.end() == ins_map_.find(max_index_+1));
-    ins_map_[max_index_+1] = move(new_ins);
-    assert(nullptr == new_ins);
-    ++max_index_;
+    while (true) {
+        int ret = callback(index, hs, rsp_msg);
+        if (0 == ret) {
+            break;
+        }
+
+        // TODO: usleep maybe ?
+    }
+
     return make_tuple(0, max_index_);
 }
 
 
-int Paxos::Step(uint64_t index, const Message& msg, StepCallback callback)
+int Paxos::Step(uint64_t index, const Message& msg, Callback callback)
 {
-    string accepted_value_buf;
     unique_ptr<proto::HardState> hs;
     unique_ptr<Message> rsp_msg;
 
@@ -97,14 +120,14 @@ int Paxos::Step(uint64_t index, const Message& msg, StepCallback callback)
         assert(nullptr != ins);
 
         auto rsp_msg_type = ins->Step(msg);
-        tie(hs, rsp_msg, accepted_value_buf) = produceRsp(ins, rsp_msg_type);
+        tie(hs, rsp_msg) = produceRsp(index, ins, msg, rsp_msg_type);
         if (commited_index_ < next_commited_index_) {
             update_index = true;
         }
     }
 
     // 2.
-    int ret = callback(index, commited_index_, hs, rsp_msg);
+    int ret = callback(index, hs, rsp_msg);
     if (0 != ret) {
         // error case
         return ret;
@@ -136,14 +159,14 @@ int Paxos::Step(uint64_t index, const Message& msg, StepCallback callback)
 
 std::tuple<
     std::unique_ptr<proto::HardState>, 
-    std::unique_ptr<Message>, 
-    std::string>
+    std::unique_ptr<Message>> 
 Paxos::produceRsp(
         uint64_t index, 
-        const PaxosInstance* ins, MessageType rsp_msg_type)
+        const PaxosInstance* ins, 
+        const Message& req_msg, 
+        MessageType rsp_msg_type)
 {
     assert(nullptr != ins);
-    string accepted_value_buf;
     unique_ptr<proto::HardState> hs;
     unique_ptr<Message> rsp_msg;
 
@@ -153,9 +176,24 @@ Paxos::produceRsp(
         assert(nullptr != hs);
 
         rsp_msg = unique_ptr<Message>{new Message};
+        assert(nullptr != rsp_msg);
         rsp_msg->type = MessageType::PROP;
         rsp_msg->prop_num = hs->proposed_num();
         rsp_msg->peer_id = selfid_;
+        break;
+    case MessageType::PROP_RSP:
+        rsp_msg = unique_ptr<Message>{new Message};
+        assert(nullptr != rsp_msg);
+        rsp_msg->type = MessageType::PROP_RSP;
+        rsp_msg->prop_num = req_msg.prop_num;
+        rsp_msg->peer_id = selfid_;
+        rsp_msg->promised_num = ins->GetPromisedNum();
+        assert(rsp_msg->promised_num >= rsp_msg->prop_num);
+        if (req_msg.prop_num == rsp_msg->promised_num) {
+            // promised 
+            rsp_msg->accepted_num = ins->GetAcceptedNum();
+            rsp_msg->accepted_value = ins->GetAcceptedValue();
+        }
         break;
     case MessageType::ACCPT:
         hs = createHardState(index, ins);
@@ -165,8 +203,17 @@ Paxos::produceRsp(
         assert(nullptr != rsp_msg);
         rsp_msg->type = MessageType::ACCPT;
         rsp_msg->prop_num = hs->proposed_num();
-        rsp_msg->accepted_value = &(hs->accepted_value());
-        assert(nullptr != rsp_msg->accepted_value);
+        rsp_msg->peer_id = selfid_;
+        rsp_msg->accepted_value = hs->accepted_value();
+        break;
+    case MessageType::ACCPT_RSP:
+        rsp_msg = unique_ptr<Message>{new Message};
+        assert(nullptr != rsp_msg);
+        rsp_msg->type = MessageType::ACCPT_RSP;
+        rsp_msg->prop_num = req_msg.prop_num;
+        rsp_msg->peer_id = selfid_;
+        rsp_msg->promised_num = ins->GetPromisedNum();
+        rsp_msg->accepted_num = ins->GetAcceptedNum();
         break;
     case MessageType::CHOSEN:
         // mark index as chosen
@@ -174,11 +221,11 @@ Paxos::produceRsp(
         rsp_msg = unique_ptr<Message>{new Message};
         assert(nullptr != rsp_msg);
         rsp_msg->type = MessageType::CHOSEN;
-        rsp_msg->prop_num = ins->GetProposeNum();
+        rsp_msg->prop_num = req_msg.prop_num;
+        rsp_msg->peer_id = selfid_;
+        rsp_msg->promised_num = ins->GetPromisedNum();
         rsp_msg->accepted_num = ins->GetAcceptedNum(); 
-        accepted_value_buf = ins->GetAcceptedValue();
-        rsp_msg->accepted_value = &accepted_value_buf;
-        assert(nullptr != rsp_msg->accepted_value);
+        rsp_msg->accepted_value = ins->GetAcceptedValue();
 
         // update next_commited_index_
         hassert(next_commited_index_ >= commited_index_, 
@@ -204,7 +251,7 @@ Paxos::produceRsp(
         break;
     }
 
-    return make_tuple(hs, rsp_msg, accepted_value_buf);
+    return make_tuple(hs, rsp_msg);
 }
 
 int Paxos::Wait(uint64_t index)

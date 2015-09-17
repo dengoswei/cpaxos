@@ -45,7 +45,7 @@ struct Message {
     uint64_t peer_id = 0;
     uint64_t promised_num = 0;
     uint64_t accepted_num = 0;
-    const std::string* accepted_value = nullptr;
+    const std::string accepted_value;
 };
 
 

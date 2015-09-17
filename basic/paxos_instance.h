@@ -45,7 +45,7 @@ public:
             uint64_t prop_num, 
             uint64_t peer_id, uint64_t peer_promised_num, 
             uint64_t peer_accepted_num, 
-            const std::string* peer_accepted_value);
+            const std::string& peer_accepted_value);
 
     PropState stepAcceptRsp(
             uint64_t prop_num, 

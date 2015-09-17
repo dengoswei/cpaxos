@@ -74,7 +74,7 @@ paxos::MessageType PaxosInstanceImpl::step(const paxos::Message& msg)
     case MessageType::ACCPT_RSP:
         {
             assert(PropState::WAIT_ACCEPT == prop_state_);
-            assert(nullptr == msg.accepted_value);
+            assert(true == msg.accepted_value.empty());
             auto next_prop_state = stepAcceptRsp(
                     msg.prop_num, msg.peer_id, msg.accepted_num);
             rsp_msg_type = updatePropState(next_prop_state);
@@ -87,8 +87,7 @@ paxos::MessageType PaxosInstanceImpl::step(const paxos::Message& msg)
         rsp_msg_type = MessageType::PROP_RSP;
         break;
     case MessageType::ACCPT:
-        assert(nullptr != msg.accepted_value);
-        updateAccepted(msg.prop_num, *msg.accepted_value);
+        updateAccepted(msg.prop_num, msg.accepted_value);
         rsp_msg_type = MessageType::ACCPT_RSP;
         break;
 
@@ -218,7 +217,7 @@ PropState PaxosInstanceImpl::stepPrepareRsp(
         uint64_t peer_id, 
         uint64_t peer_promised_num, 
         uint64_t peer_accepted_num, 
-        const std::string* peer_accepted_value)
+        const std::string& peer_accepted_value)
 {
     assert(0 < peer_id);
     assert(0 < major_cnt_);
@@ -234,10 +233,10 @@ PropState PaxosInstanceImpl::stepPrepareRsp(
             max_proposed_num >= peer_promised_num, rsp_votes_);
     if (max_proposed_num >= peer_promised_num) {
         // peer promised
-        if (nullptr != peer_accepted_value) {
+        if (!peer_accepted_value.empty()) {
             if (peer_accepted_num > max_accepted_hint_num_) {
                 max_accepted_hint_num_ = peer_accepted_num;
-                proposing_value_ = *peer_accepted_value;
+                proposing_value_ = peer_accepted_value;
             }
         }
     }

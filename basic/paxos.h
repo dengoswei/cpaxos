@@ -20,31 +20,32 @@ class PaxosInstance;
 class Paxos {
 
 public:
+    Paxos(uint64_t selfid_);
 
     typedef std::function<int(
-            uint64_t, uint64_t,  
+            uint64_t,
             const unique_ptr<proto::HardState>&, 
-            const unique_ptr<Message>&)> StepCallback;
+            const unique_ptr<Message>&)> Callback;
 
     // <retcode, proposing index>
-    std::tuple<int, uint64_t> Propose(const std::string& proposing_value);
+    std::tuple<int, uint64_t> Propose(
+            const std::string& proposing_value, Callback callback);
 
-    int Step(uint64_t index, const Message& msg, StepCallback callback);
+    int Step(uint64_t index, const Message& msg, Callback callback);
 
     uint64_t GetMaxIndex() { return max_index_; }
     uint64_t GetCommitedIndex() { return commited_index_; }
 
     int Wait(uint64_t index);
 
-
 private:
     std::tuple<
         std::unique_ptr<proto::HardState>, 
-        std::unique_ptr<Message>, 
-        std::string> produceRsp(
-                uint64_t index, 
-                const PaxosInstance* ins, MessageType rsp_msg_type);
-
+        std::unique_ptr<Message>>
+    produceRsp(uint64_t index, 
+            const PaxosInstance* ins, 
+            const Message& req_msg, 
+            MessageType rsp_msg_type);
 
 private:
     std::mutex paxos_mutex_;
