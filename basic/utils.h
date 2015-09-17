@@ -40,12 +40,14 @@ enum class MessageType : uint32_t {
 struct Message {
 //    Message() = default;
 
+    Message& operator=(const Message&) = default;
+
     MessageType type = MessageType::UNKOWN;
     uint64_t prop_num = 0;
     uint64_t peer_id = 0;
     uint64_t promised_num = 0;
     uint64_t accepted_num = 0;
-    const std::string accepted_value;
+    std::string accepted_value;
 };
 
 

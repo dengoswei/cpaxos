@@ -1,4 +1,7 @@
 #include "paxos.h"
+#include "paxos_instance.h"
+#include "utils.h"
+#include "paxos.pb.h"
 
 
 using namespace std;
@@ -10,7 +13,7 @@ using namespace paxos;
 std::unique_ptr<PaxosInstance> buildPaxosInstance(
         size_t peer_set_size, uint64_t selfid, uint64_t prop_cnt)
 {
-    const int major_cnt = static_cast<int>(peer_set_.size())/2 + 1;
+    const int major_cnt = static_cast<int>(peer_set_size)/2 + 1;
     assert(0 < major_cnt);
     assert(0 < selfid);
     
@@ -27,10 +30,10 @@ createHardState(uint64_t index, const PaxosInstance* ins)
 {
     assert(0 < index);
     assert(nullptr != ins);
-    auto hs = unique_ptr<proto::HardState>{new proto::HardState};
+    auto hs = unique_ptr<proto::HardState>{new proto::HardState{}};
     assert(nullptr != hs);
 
-    hs->set_index();
+    hs->set_index(index);
     hs->set_proposed_num(ins->GetProposeNum());
     hs->set_promised_num(ins->GetPromisedNum());
     hs->set_accepted_num(ins->GetAcceptedNum());
@@ -56,6 +59,7 @@ std::tuple<int, uint64_t>
     unique_ptr<proto::HardState> hs;
     unique_ptr<Message> rsp_msg;
 
+    uint64_t new_index = 0;
     {
         lock_guard<mutex> lock(paxos_mutex_);
         if (max_index_ != commited_index_) {
@@ -67,18 +71,19 @@ std::tuple<int, uint64_t>
         int ret = new_ins->Propose(proposing_value);
         assert(0 == ret); // always ret 0 on new PaxosInstance 
         
-        uint64_t new_index = max_index_ + 1;
+        new_index = max_index_ + 1;
         assert(ins_map_.end() == ins_map_.find(max_index_+1));
         ins_map_[max_index_+1] = move(new_ins);
         assert(nullptr == new_ins);
         ++max_index_;
 
         tie(hs, rsp_msg) = produceRsp(
-                new_index, ins.get(), Message{}, MessageType::PROP);
+                new_index, ins_map_[new_index].get(), Message{}, MessageType::PROP);
     }
 
+    assert(0 < new_index);
     while (true) {
-        int ret = callback(index, hs, rsp_msg);
+        int ret = callback(new_index, hs, rsp_msg);
         if (0 == ret) {
             break;
         }
@@ -251,14 +256,17 @@ Paxos::produceRsp(
         break;
     }
 
-    return make_tuple(hs, rsp_msg);
+    return make_tuple(move(hs), move(rsp_msg));
 }
 
 int Paxos::Wait(uint64_t index)
 {
     unique_lock<mutex> lock(paxos_mutex_);
-    paxos_cv_.wait(lock, []{ return index <= commited_index_; });
+    if (index <= commited_index_) {
+        return 0;
+    }
 
+    paxos_cv_.wait(lock, [index, this]{ return index <= commited_index_; });
     return 0;
 }
 

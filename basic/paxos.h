@@ -14,7 +14,14 @@
 
 namespace paxos {
 
+namespace proto {
 
+class HardState;
+
+} // namespace proto
+
+struct Message;
+enum class MessageType : uint32_t;
 class PaxosInstance;
 
 class Paxos {
@@ -24,8 +31,8 @@ public:
 
     typedef std::function<int(
             uint64_t,
-            const unique_ptr<proto::HardState>&, 
-            const unique_ptr<Message>&)> Callback;
+            const std::unique_ptr<proto::HardState>&, 
+            const std::unique_ptr<Message>&)> Callback;
 
     // <retcode, proposing index>
     std::tuple<int, uint64_t> Propose(

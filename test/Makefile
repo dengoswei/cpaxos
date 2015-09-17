@@ -4,10 +4,10 @@ CXXFLAGS += -g -Wall -Wextra
 
 
 
-TESTS = utils_test paxos_instance_test
+TESTS = utils_test paxos_instance_test paxos_test
 
-INCLS += -I../basic
-LINKS += -lpthread
+INCLS += -I../basic -I../proto
+LINKS += -lpthread -lprotobuf
 
 GTEST_HEADERS = $(GTEST_DIR)/include/gtest/*.h \
                 $(GTEST_DIR)/include/gtest/internal/*.h
@@ -18,7 +18,7 @@ BUILDEXE = $(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ $^ $(LINKS)
 all: $(TESTS)
 
 clean :
-	rm -f $(TESTS) gtest.a gtest_main.a *.o ../basic/*.o
+	rm -f $(TESTS) gtest.a gtest_main.a *.o ../basic/*.o ../proto/*.o
 
 # Builds gtest.a and gtest_main.a.
 
@@ -49,6 +49,9 @@ utils_test: utils_test.o gtest_main.a
 	$(BUILDEXE)
 
 paxos_instance_test: paxos_instance_test.o ../basic/paxos_instance.o gtest_main.a
+	$(BUILDEXE)
+
+paxos_test: paxos_test.o ../basic/paxos.o ../basic/paxos_instance.o ../proto/paxos.pb.o gtest_main.a
 	$(BUILDEXE)
 
 .cc.o:

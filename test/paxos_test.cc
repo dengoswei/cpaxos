@@ -1,19 +1,22 @@
 #include "utils.h"
 #include "paxos.h"
+#include "paxos_instance.h"
 #include "gtest/gtest.h"
+#include "paxos.pb.h"
 
 
 using namespace paxos;
+using namespace std;
 
 
 class PaxosTest : public ::testing::Test {
 
-protecte:
+protected:
     virtual void SetUp() override 
     {
         for (uint64_t id = 1; id <= 3; ++id)
         {
-            paxos_map_.emplace(id, new Paxos{id});
+            paxos_map_.emplace(id, unique_ptr<Paxos>{new Paxos{id}});
         }
     }
 
@@ -32,8 +35,8 @@ TEST_F(PaxosTest, SimpleImplPropose)
     Paxos* q = paxos_map_[2ull].get();
     assert(nullptr != q);
 
-    vector<tuple<int, Message>> vecMsg;
-    auto callback = [](
+    vector<tuple<uint64_t, Message>> vecMsg;
+    auto callback = [&](
             uint64_t index, 
             const unique_ptr<proto::HardState>& hs, 
             const unique_ptr<Message>& rsp_msg) {
@@ -42,7 +45,7 @@ TEST_F(PaxosTest, SimpleImplPropose)
         if (nullptr != hs) {
             logdebug("index %" PRIu64 " hs[index %" PRIu64 ", "
                      "proposed_num %" PRIu64 ", promised_num %" PRIu64
-                     ", accepted_num %"PRIu64 ", accepted_value %s]", 
+                     ", accepted_num %" PRIu64 ", accepted_value %s]", 
                      index, hs->index(), hs->proposed_num(), 
                      hs->promised_num(), hs->accepted_num(), 
                      hs->accepted_value().c_str());
@@ -54,10 +57,10 @@ TEST_F(PaxosTest, SimpleImplPropose)
                      "prop_num %" PRIu64 ", peer_id %d "
                      "promised_num %" PRIu64 ", "
                      "accepted_num %" PRIu64 "accepted_value %s]", 
-                     index, static_cast<int>(rsp_msg.type), 
-                     rsp_msg.prop_num, static_cast<int>(rsp_msg.peer_id), 
-                     rsp_msg.promised_num, rsp_msg.accepted_num, 
-                     rsp_msg.accepted_value.c_str());
+                     index, static_cast<int>(rsp_msg->type), 
+                     rsp_msg->prop_num, static_cast<int>(rsp_msg->peer_id), 
+                     rsp_msg->promised_num, rsp_msg->accepted_num, 
+                     rsp_msg->accepted_value.c_str());
 
             Message msg = *rsp_msg;
             vecMsg.emplace_back(make_tuple(index, msg));
@@ -72,18 +75,70 @@ TEST_F(PaxosTest, SimpleImplPropose)
     hassert(0 == ret, "ret %d", ret);
     assert(0 < index);
 
+    // q: recv prop req, produce prop_rsp 
     {
         uint64_t req_index = 0;
-        uint64_t req_msg;
+        Message req_msg;
         tie(req_index, req_msg) = vecMsg.back();
         vecMsg.clear();
         assert(MessageType::PROP == req_msg.type);
+        assert(index == req_index);
         ret = q->Step(req_index, req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
-
-
     }
 
+    // p: recv prop rsp, produce accpt req
+    {
+        uint64_t req_index = 0;
+        Message req_msg;
+        tie(req_index, req_msg) = vecMsg.back();
+        vecMsg.clear();
+        assert(MessageType::PROP_RSP == req_msg.type);
+        assert(index == req_index);
+
+        ret = p->Step(req_index, req_msg, callback);
+        hassert(0 == ret, "Paxos::Step ret %d", ret);
+    }
+
+    // q: recv accpt req, produce accpt_rsp
+    {
+        uint64_t req_index = 0;
+        Message req_msg;
+        tie(req_index, req_msg) = vecMsg.back();
+        vecMsg.clear();
+        assert(MessageType::ACCPT == req_msg.type);
+        assert(index == req_index);
+
+        ret = q->Step(req_index, req_msg, callback);
+        hassert(0 == ret, "Paxos::Step ret %d", ret);
+    }
+
+    // p: recv accpt rsp, => chosen
+    {
+        uint64_t req_index = 0;
+        Message req_msg;
+        tie(req_index, req_msg) = vecMsg.back();
+        vecMsg.clear();
+        assert(MessageType::ACCPT_RSP == req_msg.type);
+        assert(index == req_index);
+
+        ret = p->Step(req_index, req_msg, callback);
+        hassert(0 == ret, "Paxos::Step ret %d", ret);
+
+        uint64_t commited_index = p->GetCommitedIndex();
+        assert(commited_index == index);
+    }
+
+    // q: recv chosen req 
+    {
+        uint64_t req_index = 0;
+        Message req_msg;
+        tie(req_index, req_msg) = vecMsg.back();
+        vecMsg.clear();
+        assert(MessageType::CHOSEN == req_msg.type);
+        assert(index == req_index);
+        // TODO
+    }
 
 }
 
