@@ -31,7 +31,7 @@ typedef std::function<int(
 class PaxosImpl {
 
 public:
-    PaxosImpl(uint64_t selfid);
+    PaxosImpl(uint64_t selfid, uint64_t group_size);
 
     // NOTICE:
     // over-come std::unque_ptr uncomplete type;
@@ -85,7 +85,7 @@ private:
 //    Drop mutex protect
 //    :=> paxos won't be thread safe;
     uint64_t selfid_ = 0;
-    std::set<uint64_t> peer_set_;
+    uint64_t group_size_ = 0;
 
     uint64_t max_index_ = 0;
     uint64_t commited_index_ = 0;

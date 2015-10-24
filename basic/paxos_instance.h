@@ -81,6 +81,10 @@ class PaxosInstance {
 public: 
     PaxosInstance(int major_cnt, uint64_t prop_num);
 
+    // NOTICE:
+    // over-come std::unque_ptr uncomplete type;
+    ~PaxosInstance();
+
     int Propose(const std::string& proposing_value);
 
     MessageType Step(const Message& msg);

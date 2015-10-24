@@ -1,18 +1,14 @@
 #pragma once
 
-#include <tuple>
-#include <string>
-#include <set>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <condition_variable>
-#include <functional>
 #include <stdint.h>
 
-
-
 namespace paxos {
+
+class PaxosImpl;
+struct Message;
 
 namespace proto {
 
@@ -20,60 +16,38 @@ class HardState;
 
 } // namespace proto
 
-struct Message;
-enum class MessageType : uint32_t;
-class PaxosInstance;
+typedef std::function<int(
+        uint64_t,
+        const std::unique_ptr<proto::HardState>&, 
+        const std::unique_ptr<Message>&)> Callback;
+
 
 class Paxos {
 
-public:
-    Paxos(uint64_t selfid);
+public: 
+    Paxos(uint64_t selfid, uint64_t group_size);
 
-    typedef std::function<int(
-            uint64_t,
-            const std::unique_ptr<proto::HardState>&, 
-            const std::unique_ptr<Message>&)> Callback;
+    // NOTICE:
+    // over-come std::unque_ptr uncomplete type;
+    ~Paxos();
 
-    // <retcode, proposing index>
-    std::tuple<int, uint64_t> Propose(
-            const std::string& proposing_value, Callback callback);
+    std::tuple<int, uint64_t>
+        Propose(const std::string& proposing_value, Callback callback);
 
     int Step(uint64_t index, const Message& msg, Callback callback);
 
-    uint64_t GetMaxIndex() { return max_index_; }
-    uint64_t GetCommitedIndex() { return commited_index_; }
-    uint64_t GetSelfId() { return selfid_; }
+    void Wait(uint64_t index);
 
-    int Wait(uint64_t index);
-
-
-private:
-    std::tuple<
-        std::unique_ptr<proto::HardState>, 
-        std::unique_ptr<Message>>
-    produceRsp(uint64_t index, 
-            const PaxosInstance* ins, 
-            const Message& req_msg, 
-            MessageType rsp_msg_type);
+    uint64_t GetMaxIndex();
+    uint64_t GetCommitedIndex();
+    uint64_t GetSelfId();
 
 private:
     std::mutex paxos_mutex_;
     std::condition_variable paxos_cv_;
-
-    uint64_t selfid_ = 0;
-    std::set<uint64_t> peer_set_;
-
-    uint64_t max_index_ = 0;
-    uint64_t commited_index_ = 0;
-    uint64_t next_commited_index_ = 0;
-    std::set<uint64_t> chosen_set_;
-    std::set<uint64_t> pending_hs_;
-    std::map<uint64_t, std::unique_ptr<PaxosInstance>> ins_map_;
+    std::unique_ptr<PaxosImpl> paxos_impl_;
 };
 
 
 } // namespace paxos
-
-
-
 

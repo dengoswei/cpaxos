@@ -11,9 +11,9 @@ namespace {
 using namespace paxos;
 
 std::unique_ptr<PaxosInstance> buildPaxosInstance(
-        size_t peer_set_size, uint64_t selfid, uint64_t prop_cnt)
+        size_t group_size, uint64_t selfid, uint64_t prop_cnt)
 {
-    const int major_cnt = static_cast<int>(peer_set_size)/2 + 1;
+    const int major_cnt = static_cast<int>(group_size)/2 + 1;
     assert(0 < major_cnt);
     assert(0 < selfid);
     
@@ -47,10 +47,12 @@ createHardState(uint64_t index, const PaxosInstance* ins)
 
 namespace paxos {
 
-PaxosImpl::PaxosImpl(uint64_t selfid)
+PaxosImpl::PaxosImpl(uint64_t selfid, uint64_t group_size)
     : selfid_(selfid)
+    , group_size_(group_size)
 {
-
+    assert(0 < selfid_);
+    assert(selfid_ <= group_size_);
 }
 
 PaxosImpl::~PaxosImpl() = default;
@@ -69,7 +71,7 @@ uint64_t PaxosImpl::NextProposingIndex()
 std::unique_ptr<PaxosInstance>
 PaxosImpl::BuildNewPaxosInstance()
 {
-    return buildPaxosInstance(peer_set_.size(), selfid_, 0);
+    return buildPaxosInstance(group_size_, selfid_, 0);
 }
 
 void PaxosImpl::DiscardProposingInstance(
@@ -152,7 +154,7 @@ PaxosInstance* PaxosImpl::GetInstance(uint64_t index)
     if (ins_map_.end() == ins_map_.find(index)) {
         // need build a new paxos instance
         auto new_ins = 
-            buildPaxosInstance(peer_set_.size(), selfid_, 0);
+            buildPaxosInstance(group_size_, selfid_, 0);
         assert(nullptr != new_ins);
         ins_map_[index] = move(new_ins);
         assert(nullptr == new_ins);

@@ -4,7 +4,7 @@ CXXFLAGS += -g -Wall -Wextra
 
 
 
-TESTS = utils_test paxos_instance_test paxos_test
+TESTS = utils_test paxos_instance_test paxos_test paxos_pb_test
 
 INCLS += -I../basic -I../proto
 LINKS += -lpthread -lprotobuf
@@ -51,9 +51,15 @@ utils_test: utils_test.o gtest_main.a
 paxos_instance_test: paxos_instance_test.o ../basic/paxos_instance.o gtest_main.a
 	$(BUILDEXE)
 
-paxos_test: paxos_test.o ../basic/paxos.o ../basic/paxos_instance.o ../proto/paxos.pb.o gtest_main.a
+paxos_test: paxos_test.o ../basic/paxos_instance.o ../basic/paxos_impl.o ../basic/paxos.o ../proto/paxos.pb.o gtest_main.a
 	$(BUILDEXE)
 
-.cc.o:
+paxos_pb_test: paxos_pb_test.o ../proto/paxos.pb.o gtest_main.a
+	$(BUILDEXE)
+
+%.o:%.cc
 	$(CPPCOMPILE)
+
+#.cc.o:
+#	$(CPPCOMPILE)
 

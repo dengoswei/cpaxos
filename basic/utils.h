@@ -22,7 +22,10 @@
 }
 
 #define logdebug(format, ...) \
-    printf("[PAXOS] " format "\n", ##__VA_ARGS__)
+    printf("[PAXOS DEBUG] " format "\n", ##__VA_ARGS__)
+
+#define logerr(format, ...) \
+    printf("[PAXOS ERROR] " format "\n", ##__VA_ARGS__)
 
 namespace paxos {
 
@@ -43,9 +46,10 @@ struct Message {
     Message& operator=(const Message&) = default;
 
     MessageType type = MessageType::UNKOWN;
-    uint64_t prop_num = 0;
     uint64_t peer_id = 0;
     uint64_t to_id = 0;
+
+    uint64_t prop_num = 0;
     uint64_t promised_num = 0;
     uint64_t accepted_num = 0;
     std::string accepted_value;

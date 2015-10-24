@@ -47,6 +47,7 @@ PaxosInstanceImpl::PaxosInstanceImpl(int major_cnt, uint64_t prop_num)
 
 }
 
+
 paxos::MessageType PaxosInstanceImpl::step(const paxos::Message& msg)
 {
     using namespace paxos;
@@ -347,6 +348,8 @@ PaxosInstance::PaxosInstance(int major_cnt, uint64_t prop_num)
 {
 
 }
+
+PaxosInstance::~PaxosInstance() = default;
 
 
 int PaxosInstance::Propose(const std::string& proposing_value)

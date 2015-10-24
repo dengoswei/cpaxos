@@ -16,7 +16,7 @@ protected:
     {
         for (uint64_t id = 1; id <= 3; ++id)
         {
-            paxos_map_.emplace(id, unique_ptr<Paxos>{new Paxos{id}});
+            paxos_map_.emplace(id, unique_ptr<Paxos>{new Paxos{id, 3}});
         }
     }
 

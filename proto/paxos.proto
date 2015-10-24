@@ -36,3 +36,9 @@ message HardState {
     optional bytes accepted_value = 6;
 };
 
+
+message LogEntry {
+    required uint64 logid = 1;
+    optional bytes key = 2;
+    optional bytes value = 3;
+};
