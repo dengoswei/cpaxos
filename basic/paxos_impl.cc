@@ -89,17 +89,26 @@ void PaxosImpl::DiscardProposingInstance(
 
 void PaxosImpl::CommitProposingInstance(
         const uint64_t index, 
+        const uint64_t store_seq, 
         std::unique_ptr<PaxosInstance>&& proposing_ins)
 {
     assert(index == proposing_index_);
     assert(0 != proposing_index_);
     assert(nullptr != proposing_ins);
     assert(ins_map_.end() == ins_map_.find(index));
+    assert(0 != store_seq);
 
     ins_map_[index] = move(proposing_ins);
     assert(nullptr == proposing_ins);
     max_index_ = max(max_index_, index);
-    pending_index_.erase(index);
+
+    if (pending_index_.end() != pending_index_.find(index)) {
+        assert(0 != pending_index_[index]);
+        if (store_seq == pending_index_[index]) {
+            pending_index_.erase(index);
+        }
+    }
+
     proposing_index_ = 0;
 }
 
@@ -166,13 +175,18 @@ PaxosInstance* PaxosImpl::GetInstance(uint64_t index)
     return ins; 
 }
 
-void PaxosImpl::CommitStep(uint64_t index)
+void PaxosImpl::CommitStep(uint64_t index, uint64_t store_seq)
 {
     assert(0 < index);
     assert(index != proposing_index_);
     assert(commited_index_ <= next_commited_index_);
     commited_index_ = next_commited_index_;
-    pending_index_.erase(index);
+    if (pending_index_.end() != pending_index_.find(index)) {
+        assert(0 != pending_index_[index]);
+        if (store_seq == pending_index_[index]) {
+            pending_index_.erase(index);
+        }
+    }
 }
 
 //int PaxosImpl::Step(
@@ -216,9 +230,10 @@ void PaxosImpl::CommitStep(uint64_t index)
 //    return 0;
 //}
 
-std::tuple<
-    std::unique_ptr<proto::HardState>, 
-    std::unique_ptr<Message>> 
+//std::tuple<
+//    std::unique_ptr<proto::HardState>, 
+//    std::unique_ptr<Message>> 
+std::tuple<uint64_t, std::unique_ptr<Message>>
 PaxosImpl::ProduceRsp(
         uint64_t index, 
         const PaxosInstance* ins, 
@@ -230,18 +245,20 @@ PaxosImpl::ProduceRsp(
             PRIu64 " selfid_ %" PRIu64 "\n", 
             static_cast<int>(req_msg.type), req_msg.to_id, selfid_);
 
-    unique_ptr<proto::HardState> hs;
+//    unique_ptr<proto::HardState> hs;
+    uint64_t seq = 0;
     unique_ptr<Message> rsp_msg;
 
     switch (rsp_msg_type) {
     case MessageType::PROP:
-        hs = createHardState(index, ins);
-        assert(nullptr != hs);
+ //       hs = createHardState(index, ins);
+ //       assert(nullptr != hs);
 
+        seq = ++store_seq_;
         rsp_msg = unique_ptr<Message>{new Message};
         assert(nullptr != rsp_msg);
         rsp_msg->type = MessageType::PROP;
-        rsp_msg->prop_num = hs->proposed_num();
+        rsp_msg->prop_num = ins->GetProposeNum();
         rsp_msg->peer_id = selfid_;
         rsp_msg->to_id = 0; // broad cast;
         break;
@@ -261,16 +278,17 @@ PaxosImpl::ProduceRsp(
         }
         break;
     case MessageType::ACCPT:
-        hs = createHardState(index, ins);
-        assert(nullptr != hs);
+//        hs = createHardState(index, ins);
+//        assert(nullptr != hs);
 
+        seq = ++store_seq_;
         rsp_msg = unique_ptr<Message>{new Message};
         assert(nullptr != rsp_msg);
         rsp_msg->type = MessageType::ACCPT;
-        rsp_msg->prop_num = hs->proposed_num();
+        rsp_msg->prop_num = ins->GetProposeNum();
         rsp_msg->peer_id = selfid_;
         rsp_msg->to_id = 0; // broadcast
-        rsp_msg->accepted_value = hs->accepted_value();
+        rsp_msg->accepted_value = ins->GetAcceptedValue();
         break;
     case MessageType::ACCPT_RSP:
         rsp_msg = unique_ptr<Message>{new Message};
@@ -321,9 +339,10 @@ PaxosImpl::ProduceRsp(
             assert(req_msg.accepted_num != ins->GetAcceptedNum());
 
             // else=> store
-            hs = createHardState(index, ins);
-            assert(nullptr != hs);
+            //hs = createHardState(index, ins);
+            //assert(nullptr != hs);
 
+            seq = ++store_seq_;
             // rsp_msg for self
             rsp_msg = unique_ptr<Message>{new Message};
             assert(nullptr != rsp_msg);
@@ -344,16 +363,17 @@ PaxosImpl::ProduceRsp(
     }
 
     if (pending_index_.end() != pending_index_.find(index)) {
-        if (nullptr != hs) {
-            hs = createHardState(index, ins);
+        if (0 == seq) {
+            seq = pending_index_[index];
         }
     }
 
-    if (nullptr != hs) {
-        pending_index_.insert(index); 
+    if (0 != seq) {
+        assert(seq >= pending_index_[index]);
+        pending_index_[index] = seq;
     }
 
-    return make_tuple(move(hs), move(rsp_msg));
+    return make_tuple(seq, move(rsp_msg));
 }
 
 } // namspace paxos

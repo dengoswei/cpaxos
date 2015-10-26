@@ -37,13 +37,6 @@ public:
     // over-come std::unque_ptr uncomplete type;
     ~PaxosImpl();
 
-    // <retcode, proposing index>
-    // IMPORTANT:
-    // you can't call both Propose & Step the same time;
-    // std::tuple<int, uint64_t> Propose(
-    //         const std::string& proposing_value, Callback callback);
-    // int Step(uint64_t index, const Message& msg, Callback callback);
-
     // help function
     uint64_t GetMaxIndex() { return max_index_; }
     uint64_t GetCommitedIndex() { return commited_index_; }
@@ -56,7 +49,7 @@ public:
             uint64_t index, 
             std::unique_ptr<PaxosInstance>&& proposing_ins);
     void CommitProposingInstance(
-            uint64_t index, 
+            uint64_t index, uint64_t store_seq, 
             std::unique_ptr<PaxosInstance>&& proposing_ins);
 
     bool IsChosen(uint64_t index) {
@@ -71,11 +64,14 @@ public:
 
     // may craete a new instance
     PaxosInstance* GetInstance(uint64_t index);
-    void CommitStep(uint64_t index);
+    void CommitStep(uint64_t index, uint64_t store_seq);
 
+//    std::tuple<
+//        std::unique_ptr<proto::HardState>, 
+//        std::unique_ptr<Message>>
+    // hs seq id & rsp msg
     std::tuple<
-        std::unique_ptr<proto::HardState>, 
-        std::unique_ptr<Message>>
+        uint64_t, std::unique_ptr<Message>>
     ProduceRsp(uint64_t index, 
             const PaxosInstance* ins, 
             const Message& req_msg, 
@@ -92,8 +88,10 @@ private:
     uint64_t next_commited_index_ = 0;
     uint64_t proposing_index_ = 0;
 
+    uint64_t store_seq_ = 0;
+
     std::set<uint64_t> chosen_set_;
-    std::set<uint64_t> pending_index_;
+    std::map<uint64_t, uint64_t> pending_index_;
     std::map<uint64_t, std::unique_ptr<PaxosInstance>> ins_map_;
 };
 
