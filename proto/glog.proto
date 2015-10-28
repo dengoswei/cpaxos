@@ -1,0 +1,20 @@
+
+
+syntax = "proto3";
+
+package glog;
+
+import "paxos.proto";
+
+
+message NoopMsg {
+};
+
+service Glog {
+
+    rpc PostMsg (paxos.proto.PaxosMsg) returns (NoopMsg) {}
+}
+
+
+
+
