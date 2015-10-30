@@ -10,9 +10,33 @@ import "paxos.proto";
 message NoopMsg {
 };
 
+
+message ProposeRequest {
+    bytes data = 1;
+};
+
+message ProposeResponse {
+    int32 retcode = 1;
+};
+
+message GetGlogRequest {
+    uint64 index = 1;
+};
+
+message GetGlogResponse {
+    string info = 1;
+    bytes data = 2;
+};
+
 service Glog {
 
-    rpc PostMsg (paxos.proto.PaxosMsg) returns (NoopMsg) {}
+    rpc PostMsg (paxos.Message) returns (NoopMsg) {}
+
+    rpc Propose (ProposeRequest) returns (ProposeResponse) {}
+
+    // ADD FOR TEST
+    rpc GetGlog (GetGlogRequest) returns (GetGlogResponse) {}
+
 }
 
 

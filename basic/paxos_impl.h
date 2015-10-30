@@ -8,24 +8,18 @@
 #include <functional>
 #include <cassert>
 #include <stdint.h>
+#include "paxos.pb.h"
 
 
 namespace paxos {
 
-namespace proto {
-
-class HardState;
-
-} // namespace proto
-
-struct Message;
-enum class MessageType : uint32_t;
+class Message;
 class PaxosInstance;
 
-typedef std::function<int(
-        uint64_t,
-        const std::unique_ptr<proto::HardState>&, 
-        const std::unique_ptr<Message>&)> Callback;
+//typedef std::function<int(
+//        uint64_t,
+//        std::unique_ptr<HardState>, 
+//        std::unique_ptr<Message>)> Callback;
 
 // NOT thread safe;
 class PaxosImpl {
@@ -47,7 +41,7 @@ public:
     std::unique_ptr<PaxosInstance> BuildNewPaxosInstance();
     void DiscardProposingInstance(
             uint64_t index, 
-            std::unique_ptr<PaxosInstance>&& proposing_ins);
+            std::unique_ptr<PaxosInstance> proposing_ins);
     void CommitProposingInstance(
             uint64_t index, uint64_t store_seq, 
             std::unique_ptr<PaxosInstance>&& proposing_ins);
@@ -66,9 +60,6 @@ public:
     PaxosInstance* GetInstance(uint64_t index);
     void CommitStep(uint64_t index, uint64_t store_seq);
 
-//    std::tuple<
-//        std::unique_ptr<proto::HardState>, 
-//        std::unique_ptr<Message>>
     // hs seq id & rsp msg
     std::tuple<
         uint64_t, std::unique_ptr<Message>>
@@ -76,6 +67,8 @@ public:
             const PaxosInstance* ins, 
             const Message& req_msg, 
             MessageType rsp_msg_type);
+
+    std::tuple<std::string, std::string> GetInfo(uint64_t index);
 
 private:
 //    Drop mutex protect

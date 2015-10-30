@@ -4,20 +4,22 @@
 #include <string>
 #include <map>
 #include "utils.h"
+#include "paxos.pb.h"
+#include "gsl.h"
 
 // public
 namespace paxos {
 
-// private
-namespace impl {
+class Message;
 
+// private
 enum class PropState : uint8_t {
     NIL = 0, 
-    PREPARE, 
-    WAIT_PREPARE, 
-    ACCEPT, 
-    WAIT_ACCEPT, 
-    CHOSEN, 
+    PREPARE = 1, 
+    WAIT_PREPARE = 2, 
+    ACCEPT = 3, 
+    WAIT_ACCEPT = 4, 
+    CHOSEN = 5, 
 };
 
 class PaxosInstanceImpl {
@@ -25,9 +27,9 @@ class PaxosInstanceImpl {
 public:
     PaxosInstanceImpl(int major_cnt, uint64_t prop_num);
 
-    paxos::MessageType step(const paxos::Message& msg);
+    MessageType step(const Message& msg);
 
-    paxos::MessageType updatePropState(PropState next_prop_state);
+    MessageType updatePropState(PropState next_prop_state);
 
     // const function
     PropState getPropState() const { return prop_state_; }
@@ -37,7 +39,7 @@ public:
     const std::string& getAcceptedValue() const { return accepted_value_; }
 
     // proposer
-    int beginPropose(const std::string& proposing_value);
+    int beginPropose(const gsl::cstring_view<>& proposing_value);
     PropState beginPreparePhase();
     PropState beginAcceptPhase();
 
@@ -73,8 +75,6 @@ private:
     std::string accepted_value_;
 };
 
-} // namespace impl
-
 
 class PaxosInstance {
 
@@ -85,10 +85,11 @@ public:
     // over-come std::unque_ptr uncomplete type;
     ~PaxosInstance();
 
-    int Propose(const std::string& proposing_value);
+    int Propose(const gsl::cstring_view<>& proposing_value);
 
     MessageType Step(const Message& msg);
 
+    int GetState() const { return static_cast<int>(ins_impl_.getPropState()); }
     uint64_t GetProposeNum() const { return ins_impl_.getProposeNum(); }
     uint64_t GetPromisedNum() const { return ins_impl_.getPromisedNum(); }
     uint64_t GetAcceptedNum() const { return ins_impl_.getAcceptedNum(); }
@@ -98,7 +99,7 @@ public:
 
 
 private:
-    impl::PaxosInstanceImpl ins_impl_;
+    PaxosInstanceImpl ins_impl_;
 };
 
 } // namespace paxos

@@ -1,8 +1,11 @@
 #pragma once
 
-
-
-class Document;
+#include <map>
+#include <string>
+#include <memory>
+#include <stdint.h>
+#include "gsl.h"
+#include "rapidjson/document.h"
 
 
 namespace paxos {
@@ -11,13 +14,21 @@ namespace paxos {
 class Config {
 
 public:
-    Config(const std::string_view& sConfigFileName);
+    Config(const gsl::cstring_view<>& sConfigFileName);
 
     ~Config();
 
+    uint64_t GetSelfId();
+
+    std::map<uint64_t, std::string> GetGroups();
+
+    rapidjson::Document& GetDocument() {
+        assert(nullptr != json_);
+        return *(json_.get());
+    }
 
 private:
-    std::unique_ptr<Document> json_;
+    std::unique_ptr<rapidjson::Document> json_;
 }; 
 
 

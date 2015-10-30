@@ -22,38 +22,38 @@
 }
 
 #define logdebug(format, ...) \
-    printf("[PAXOS DEBUG] " format "\n", ##__VA_ARGS__)
+    printf("[PAXOS DEBUG: %s %s %d] " format "\n", __FILE__, __func__, __LINE__, ##__VA_ARGS__)
 
 #define logerr(format, ...) \
-    printf("[PAXOS ERROR] " format "\n", ##__VA_ARGS__)
+    printf("[PAXOS ERROR: %s %s %d] " format "\n", __FILE__, __func__, __LINE__, ##__VA_ARGS__)
 
 namespace paxos {
 
-enum class MessageType : uint32_t {
-    UNKOWN = 0, 
-    NOOP, 
-    PROP, 
-    PROP_RSP, 
-    ACCPT, 
-    ACCPT_RSP, 
-
-    CHOSEN, 
-};
-
-struct Message {
-//    Message() = default;
-
-    Message& operator=(const Message&) = default;
-
-    MessageType type = MessageType::UNKOWN;
-    uint64_t peer_id = 0;
-    uint64_t to_id = 0;
-
-    uint64_t prop_num = 0;
-    uint64_t promised_num = 0;
-    uint64_t accepted_num = 0;
-    std::string accepted_value;
-};
+//enum class MessageType : uint32_t {
+//    UNKOWN = 0, 
+//    NOOP, 
+//    PROP, 
+//    PROP_RSP, 
+//    ACCPT, 
+//    ACCPT_RSP, 
+//
+//    CHOSEN, 
+//};
+//
+//struct Message {
+////    Message() = default;
+//
+//    Message& operator=(const Message&) = default;
+//
+//    MessageType type = MessageType::UNKOWN;
+//    uint64_t peer_id = 0;
+//    uint64_t to_id = 0;
+//
+//    uint64_t prop_num = 0;
+//    uint64_t promised_num = 0;
+//    uint64_t accepted_num = 0;
+//    std::string accepted_value;
+//};
 
 
 

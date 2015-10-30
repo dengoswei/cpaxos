@@ -1,10 +1,13 @@
 #pragma once
 
+#include <memory>
+#include "glog.grpc.pb.h"
+#include "paxos.h"
+
 
 namespace paxos {
-    namespace proto {
-        class PaxosMsg;
-    }
+    class Paxos;
+    class Message;
 }
 
 namespace glog {
@@ -16,20 +19,34 @@ namespace glog {
 namespace glog {
 
 
-class GlogServerImpl final : public Glog::Service {
+class GlogServiceImpl final : public Glog::Service {
 
 public:
     
-    GlogServerImpl(); // TODO
+    GlogServiceImpl(
+            std::unique_ptr<paxos::Paxos>&& paxos_log, 
+            paxos::Callback callback); 
+
+    ~GlogServiceImpl();
 
 
     grpc::Status PostMsg(
             grpc::ServerContext* context, 
-            const paxos::proto::PaxosMsg* request, 
-            glog::NoopMsg* reply) override;
+            const paxos::Message* request, glog::NoopMsg* reply) override;
+
+    grpc::Status Propose(
+            grpc::ServerContext* context, 
+            const glog::ProposeRequest* request, 
+            glog::ProposeResponse* reply)    override;
+
+    grpc::Status GetGlog(
+            grpc::ServerContext* context, 
+            const glog::GetGlogRequest* request, 
+            glog::GetGlogResponse* reply)    override;
 
 private:
-    paxos::Paxos paxos_log_;
+    std::unique_ptr<paxos::Paxos> paxos_log_;
+    paxos::Callback callback_;
 }; 
 
 

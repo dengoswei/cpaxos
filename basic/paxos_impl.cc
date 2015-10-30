@@ -1,7 +1,7 @@
+#include <sstream>
 #include "paxos_impl.h"
 #include "paxos_instance.h"
 #include "utils.h"
-#include "paxos.pb.h"
 
 
 using namespace std;
@@ -25,12 +25,12 @@ std::unique_ptr<PaxosInstance> buildPaxosInstance(
     return new_ins;
 }
 
-std::unique_ptr<proto::HardState> 
+std::unique_ptr<HardState> 
 createHardState(uint64_t index, const PaxosInstance* ins)
 {
     assert(0 < index);
     assert(nullptr != ins);
-    auto hs = unique_ptr<proto::HardState>{new proto::HardState{}};
+    auto hs = unique_ptr<HardState>{new HardState{}};
     assert(nullptr != hs);
 
     hs->set_index(index);
@@ -76,7 +76,7 @@ PaxosImpl::BuildNewPaxosInstance()
 
 void PaxosImpl::DiscardProposingInstance(
         const uint64_t index, 
-        std::unique_ptr<PaxosInstance>&& proposing_ins)
+        std::unique_ptr<PaxosInstance> proposing_ins)
 {
     assert(index == proposing_index_);
     assert(0 != proposing_ins);
@@ -111,46 +111,6 @@ void PaxosImpl::CommitProposingInstance(
 
     proposing_index_ = 0;
 }
-
-//std::tuple<int, uint64_t> 
-//PaxosImpl::Propose(
-//        const std::string& proposing_value, Callback callback)
-//{
-//    unique_ptr<proto::HardState> hs;
-//    unique_ptr<Message> rsp_msg;
-//
-//    // limit only one active propose
-//    auto new_index = NextProposingIndex();
-//    if (0 == new_index) {
-//        return make_tuple(-1, 0);
-//    }
-//    assert(ins_map_.end() == ins_map_.find(new_index));
-//
-//    // TODO
-//    auto new_ins = buildPaxosInstance(peer_set_.size(), selfid_, 0);
-//    assert(nullptr != new_ins);
-//    int ret = new_ins->Propose(proposing_value);
-//    assert(0 == ret); // always ret 0 on new PaxosInstance 
-//
-//    Message fake_msg;
-//    fake_msg.to_id = selfid_;
-//    tie(hs, rsp_msg) = ProduceRsp(
-//            new_index, new_ins.get(), fake_msg, MessageType::PROP);
-//    ret = callback(new_index, hs, rsp_msg);
-//    if (0 != ret) {
-//        DiscardProposingInstance(new_index, move(new_ins));
-//        assert(nullptr == new_ins);
-//        assert(0 == proposing_index_);
-//        return make_tuple(-2, 0);
-//    }
-//
-//    CommitProposingInstance(new_index, move(new_ins));
-//    assert(nullptr == new_ins);
-//    assert(0 == proposing_index_);
-//    assert(new_index <= max_index_);
-//    
-//    return make_tuple(0, new_index);
-//}
 
 PaxosInstance* PaxosImpl::GetInstance(uint64_t index)
 {
@@ -189,50 +149,6 @@ void PaxosImpl::CommitStep(uint64_t index, uint64_t store_seq)
     }
 }
 
-//int PaxosImpl::Step(
-//        uint64_t index, const Message& msg, Callback callback)
-//{
-//    assert(0 < index);
-//    unique_ptr<proto::HardState> hs;
-//    unique_ptr<Message> rsp_msg;
-//
-//    // 1.
-//    // check index with commited_index_, max_index_
-//    assert(commited_index_ <= max_index_);
-//    if (IsChosen(index)) {
-//        // msg on commited_index
-//        return 1;
-//    }
-//
-//    PaxosInstance* ins = GetInstance(index);
-//    if (nullptr == ins) {
-//        return -1;
-//    }
-//
-//    auto rsp_msg_type = ins->Step(msg);
-//    tie(hs, rsp_msg) = ProduceRsp(index, ins, msg, rsp_msg_type);
-//
-//    // 2.
-//    int ret = callback(index, hs, rsp_msg);
-//    if (0 != ret) {
-//        // error case: TODO
-//        // => IMPT: in-case of store hs failed ???
-//        //    => hs re-restore need be done!!!!
-//        return ret;
-//    }
-//
-//    // 3.
-//    assert(0 == ret);
-//    CommitStep(index);
-//    logdebug("commited_index_ %" PRIu64 " next_commited_index_ %" 
-//            PRIu64 "\n", commited_index_, next_commited_index_);
-//    // TODO: store commited_index_ ?
-//    return 0;
-//}
-
-//std::tuple<
-//    std::unique_ptr<proto::HardState>, 
-//    std::unique_ptr<Message>> 
 std::tuple<uint64_t, std::unique_ptr<Message>>
 PaxosImpl::ProduceRsp(
         uint64_t index, 
@@ -241,78 +157,72 @@ PaxosImpl::ProduceRsp(
         MessageType rsp_msg_type)
 {
     assert(nullptr != ins);
-    hassert(req_msg.to_id == selfid_, "type %d req_msg.to_id %" 
+    hassert(req_msg.to_id() == selfid_, "type %d req_msg.to_id %" 
             PRIu64 " selfid_ %" PRIu64 "\n", 
-            static_cast<int>(req_msg.type), req_msg.to_id, selfid_);
+            static_cast<int>(req_msg.type()), req_msg.to_id(), selfid_);
 
-//    unique_ptr<proto::HardState> hs;
     uint64_t seq = 0;
     unique_ptr<Message> rsp_msg;
 
     switch (rsp_msg_type) {
     case MessageType::PROP:
- //       hs = createHardState(index, ins);
- //       assert(nullptr != hs);
-
         seq = ++store_seq_;
         rsp_msg = unique_ptr<Message>{new Message};
         assert(nullptr != rsp_msg);
-        rsp_msg->type = MessageType::PROP;
-        rsp_msg->prop_num = ins->GetProposeNum();
-        rsp_msg->peer_id = selfid_;
-        rsp_msg->to_id = 0; // broad cast;
+
+        rsp_msg->set_type(MessageType::PROP);
+        rsp_msg->set_proposed_num(ins->GetProposeNum());
+        rsp_msg->set_peer_id(selfid_);
+        rsp_msg->set_to_id(0);  // broad cast;
         break;
     case MessageType::PROP_RSP:
         rsp_msg = unique_ptr<Message>{new Message};
         assert(nullptr != rsp_msg);
-        rsp_msg->type = MessageType::PROP_RSP;
-        rsp_msg->prop_num = req_msg.prop_num;
-        rsp_msg->peer_id = selfid_;
-        rsp_msg->to_id = req_msg.peer_id;
-        rsp_msg->promised_num = ins->GetPromisedNum();
-        assert(rsp_msg->promised_num >= rsp_msg->prop_num);
-        if (req_msg.prop_num == rsp_msg->promised_num) {
+        rsp_msg->set_type(MessageType::PROP_RSP);
+        rsp_msg->set_proposed_num(req_msg.proposed_num());
+        rsp_msg->set_peer_id(selfid_);
+        rsp_msg->set_to_id(req_msg.peer_id());
+        rsp_msg->set_promised_num(ins->GetPromisedNum());
+        assert(rsp_msg->promised_num() >= rsp_msg->proposed_num());
+        if (req_msg.proposed_num() == rsp_msg->promised_num()) {
             // promised 
-            rsp_msg->accepted_num = ins->GetAcceptedNum();
-            rsp_msg->accepted_value = ins->GetAcceptedValue();
+            rsp_msg->set_accepted_num(ins->GetAcceptedNum());
+            rsp_msg->set_accepted_value(ins->GetAcceptedValue());
         }
         break;
     case MessageType::ACCPT:
-//        hs = createHardState(index, ins);
-//        assert(nullptr != hs);
-
         seq = ++store_seq_;
         rsp_msg = unique_ptr<Message>{new Message};
         assert(nullptr != rsp_msg);
-        rsp_msg->type = MessageType::ACCPT;
-        rsp_msg->prop_num = ins->GetProposeNum();
-        rsp_msg->peer_id = selfid_;
-        rsp_msg->to_id = 0; // broadcast
-        rsp_msg->accepted_value = ins->GetAcceptedValue();
+        rsp_msg->set_type(MessageType::ACCPT);
+        rsp_msg->set_proposed_num(ins->GetProposeNum());
+        rsp_msg->set_peer_id(selfid_);
+        rsp_msg->set_to_id(0); // broadcast
+        rsp_msg->set_accepted_value(ins->GetAcceptedValue());
         break;
     case MessageType::ACCPT_RSP:
         rsp_msg = unique_ptr<Message>{new Message};
         assert(nullptr != rsp_msg);
-        rsp_msg->type = MessageType::ACCPT_RSP;
-        rsp_msg->prop_num = req_msg.prop_num;
-        rsp_msg->peer_id = selfid_;
-        rsp_msg->to_id = req_msg.peer_id;
-        rsp_msg->promised_num = ins->GetPromisedNum();
-        rsp_msg->accepted_num = ins->GetAcceptedNum();
+        rsp_msg->set_type(MessageType::ACCPT_RSP);
+        rsp_msg->set_proposed_num(req_msg.proposed_num());
+        rsp_msg->set_peer_id(selfid_);
+        rsp_msg->set_to_id(req_msg.peer_id());
+        rsp_msg->set_promised_num(ins->GetPromisedNum());
+        rsp_msg->set_accepted_num(ins->GetAcceptedNum());
         break;
     case MessageType::CHOSEN:
         // mark index as chosen
-        if (MessageType::CHOSEN != req_msg.type) {
+        if (MessageType::CHOSEN != req_msg.type()) {
             rsp_msg = unique_ptr<Message>{new Message};
             assert(nullptr != rsp_msg);
-            rsp_msg->type = MessageType::CHOSEN;
-            rsp_msg->prop_num = req_msg.prop_num;
-            rsp_msg->peer_id = selfid_;
-            rsp_msg->to_id = 0; // broadcast
-            rsp_msg->promised_num = ins->GetPromisedNum();
-            rsp_msg->accepted_num = ins->GetAcceptedNum(); 
-            if (rsp_msg->accepted_num != req_msg.accepted_num) {
-                rsp_msg->accepted_value = ins->GetAcceptedValue();
+            rsp_msg->set_type(MessageType::CHOSEN);
+            rsp_msg->set_proposed_num(req_msg.proposed_num());
+            rsp_msg->set_peer_id(selfid_);
+            rsp_msg->set_to_id(0); // broadcast
+            rsp_msg->set_promised_num(ins->GetPromisedNum());
+            rsp_msg->set_accepted_num(ins->GetAcceptedNum());
+            if (rsp_msg->accepted_num() != req_msg.accepted_num()) {
+                rsp_msg->set_accepted_value(ins->GetAcceptedValue());
             }
         }
         // else => no rsp
@@ -335,23 +245,19 @@ PaxosImpl::ProduceRsp(
 
         break;
     case MessageType::UNKOWN:
-        if (MessageType::CHOSEN == req_msg.type) {
-            assert(req_msg.accepted_num != ins->GetAcceptedNum());
-
-            // else=> store
-            //hs = createHardState(index, ins);
-            //assert(nullptr != hs);
+        if (MessageType::CHOSEN == req_msg.type()) {
+            assert(req_msg.accepted_num() != ins->GetAcceptedNum());
 
             seq = ++store_seq_;
             // rsp_msg for self
             rsp_msg = unique_ptr<Message>{new Message};
             assert(nullptr != rsp_msg);
-            rsp_msg->type = MessageType::CHOSEN;
-            rsp_msg->prop_num = ins->GetProposeNum(); 
-            rsp_msg->peer_id = selfid_;
-            rsp_msg->to_id = selfid_; // self-call after succ store hs;
-            rsp_msg->promised_num = ins->GetPromisedNum();
-            rsp_msg->accepted_num = ins->GetAcceptedNum();
+            rsp_msg->set_type(MessageType::CHOSEN);
+            rsp_msg->set_proposed_num(ins->GetProposeNum());
+            rsp_msg->set_peer_id(selfid_);
+            rsp_msg->set_to_id(selfid_); // self-call after succ store hs;??
+            rsp_msg->set_promised_num(ins->GetPromisedNum());
+            rsp_msg->set_accepted_num(ins->GetAcceptedNum());
         }
         // else => ignore
         break;
@@ -373,7 +279,29 @@ PaxosImpl::ProduceRsp(
         pending_index_[index] = seq;
     }
 
+    if (nullptr != rsp_msg) {
+        rsp_msg->set_index(index);
+    }
+
     return make_tuple(seq, move(rsp_msg));
+}
+
+std::tuple<std::string, std::string> PaxosImpl::GetInfo(uint64_t index)
+{
+    assert(0 < index);
+    if (ins_map_.end() == ins_map_.find(index)) {
+        return make_tuple<string, string>("null", "");
+    }
+
+    auto ins = ins_map_[index].get();
+    assert(nullptr != ins);
+
+    stringstream ss;
+    ss << "State " << ins->GetState()
+       << " ProposeNum " << ins->GetProposeNum() 
+       << " PromisedNum " << ins->GetPromisedNum()
+       << " AcceptedNum " << ins->GetAcceptedNum();
+    return make_tuple(ss.str(), ins->GetAcceptedValue());
 }
 
 } // namspace paxos

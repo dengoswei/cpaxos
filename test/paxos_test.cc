@@ -37,33 +37,32 @@ TEST_F(PaxosTest, SimpleImplPropose)
 
     vector<tuple<uint64_t, Message>> vecMsg;
     auto callback = [&](
-            uint64_t index, 
-            const unique_ptr<proto::HardState>& hs, 
+            const unique_ptr<HardState>& hs, 
             const unique_ptr<Message>& rsp_msg) {
 
         // fake => store nothing
         if (nullptr != hs) {
-            logdebug("index %" PRIu64 " hs[index %" PRIu64 ", "
+            logdebug("hs[index %" PRIu64 ", "
                      "proposed_num %" PRIu64 ", promised_num %" PRIu64
                      ", accepted_num %" PRIu64 ", accepted_value %s]", 
-                     index, hs->index(), hs->proposed_num(), 
+                     hs->index(), hs->proposed_num(), 
                      hs->promised_num(), hs->accepted_num(), 
                      hs->accepted_value().c_str());
         }
 
         // fake => rsp nothing
         if (nullptr != rsp_msg) {
-            logdebug("index %" PRIu64 " rsp_msg[type %d, "
+            logdebug("rsp_msg[type %d, index %" PRIu64 " " 
                      "prop_num %" PRIu64 ", peer_id %d "
                      "promised_num %" PRIu64 ", "
                      "accepted_num %" PRIu64 "accepted_value %s]", 
-                     index, static_cast<int>(rsp_msg->type), 
-                     rsp_msg->prop_num, static_cast<int>(rsp_msg->peer_id), 
-                     rsp_msg->promised_num, rsp_msg->accepted_num, 
-                     rsp_msg->accepted_value.c_str());
+                     static_cast<int>(rsp_msg->type()), rsp_msg->index(), 
+                     rsp_msg->proposed_num(), static_cast<int>(rsp_msg->peer_id()), 
+                     rsp_msg->promised_num(), rsp_msg->accepted_num(), 
+                     rsp_msg->accepted_value().c_str());
 
             Message msg = *rsp_msg;
-            vecMsg.emplace_back(make_tuple(index, msg));
+            vecMsg.emplace_back(make_tuple(rsp_msg->index(), msg));
         }
 
         return 0;
@@ -81,11 +80,12 @@ TEST_F(PaxosTest, SimpleImplPropose)
         Message req_msg;
         tie(req_index, req_msg) = vecMsg.back();
         vecMsg.clear();
-        assert(MessageType::PROP == req_msg.type);
+        assert(MessageType::PROP == req_msg.type());
         assert(index == req_index);
-        assert(0 == req_msg.to_id);
-        req_msg.to_id = q->GetSelfId();
-        assert(0 != req_msg.to_id);
+        assert(0 == req_msg.to_id());
+
+        req_msg.set_to_id(q->GetSelfId());
+        assert(0 != req_msg.to_id());
         ret = q->Step(req_index, req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
     }
@@ -96,7 +96,7 @@ TEST_F(PaxosTest, SimpleImplPropose)
         Message req_msg;
         tie(req_index, req_msg) = vecMsg.back();
         vecMsg.clear();
-        assert(MessageType::PROP_RSP == req_msg.type);
+        assert(MessageType::PROP_RSP == req_msg.type());
         assert(index == req_index);
 
         ret = p->Step(req_index, req_msg, callback);
@@ -109,11 +109,12 @@ TEST_F(PaxosTest, SimpleImplPropose)
         Message req_msg;
         tie(req_index, req_msg) = vecMsg.back();
         vecMsg.clear();
-        assert(MessageType::ACCPT == req_msg.type);
+        assert(MessageType::ACCPT == req_msg.type());
         assert(index == req_index);
-        assert(0 == req_msg.to_id);
-        req_msg.to_id = q->GetSelfId();
-        assert(0 != req_msg.to_id);
+        assert(0 == req_msg.to_id());
+
+        req_msg.set_to_id(q->GetSelfId());
+        assert(0 != req_msg.to_id());
         ret = q->Step(req_index, req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
     }
@@ -124,7 +125,7 @@ TEST_F(PaxosTest, SimpleImplPropose)
         Message req_msg;
         tie(req_index, req_msg) = vecMsg.back();
         vecMsg.clear();
-        assert(MessageType::ACCPT_RSP == req_msg.type);
+        assert(MessageType::ACCPT_RSP == req_msg.type());
         assert(index == req_index);
 
         ret = p->Step(req_index, req_msg, callback);
@@ -140,11 +141,12 @@ TEST_F(PaxosTest, SimpleImplPropose)
         Message req_msg;
         tie(req_index, req_msg) = vecMsg.back();
         vecMsg.clear();
-        assert(MessageType::CHOSEN == req_msg.type);
+        assert(MessageType::CHOSEN == req_msg.type());
         assert(index == req_index);
-        assert(0 == req_msg.to_id);
-        req_msg.to_id = q->GetSelfId();
-        assert(0 != req_msg.to_id);
+        assert(0 == req_msg.to_id());
+
+        req_msg.set_to_id(q->GetSelfId());
+        assert(0 != req_msg.to_id());
 
         ret = q->Step(req_index, req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);

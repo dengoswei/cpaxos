@@ -38,7 +38,6 @@ std::tuple<int, int> countVotes(const std::map<uint64_t, bool>& votes)
 
 namespace paxos {
 
-namespace impl {
 
 PaxosInstanceImpl::PaxosInstanceImpl(int major_cnt, uint64_t prop_num)
     : major_cnt_(major_cnt)
@@ -48,24 +47,29 @@ PaxosInstanceImpl::PaxosInstanceImpl(int major_cnt, uint64_t prop_num)
 }
 
 
-paxos::MessageType PaxosInstanceImpl::step(const paxos::Message& msg)
+MessageType PaxosInstanceImpl::step(const Message& msg)
 {
-    using namespace paxos;
     assert(promised_num_ >= accepted_num_);
     if (PropState::CHOSEN == prop_state_) {
         return MessageType::CHOSEN;
     }
 
     MessageType rsp_msg_type = MessageType::UNKOWN;
-    switch (msg.type) {
+    switch (msg.type()) {
         // proposer
     case MessageType::PROP_RSP:
         {
-            assert(PropState::WAIT_PREPARE == prop_state_);
+            if (PropState::WAIT_PREPARE != prop_state_) {
+                logdebug("msgtype::PROP_RSP but instance in stat %d", 
+                        static_cast<int>(prop_state_));
+                break;
+            }
+            hassert(PropState::WAIT_PREPARE == prop_state_, 
+                    "prop_stat_ %d", static_cast<int>(prop_state_));
             auto next_prop_state = stepPrepareRsp(
-                    msg.prop_num, msg.peer_id, 
-                    msg.promised_num, msg.accepted_num, 
-                    msg.accepted_value);
+                    msg.proposed_num(), msg.peer_id(), 
+                    msg.promised_num(), msg.accepted_num(), 
+                    msg.accepted_value());
             rsp_msg_type = updatePropState(next_prop_state);
             logdebug("%s next_prop_state %d rsp_msg_type %d", 
                     __func__, static_cast<int>(next_prop_state), 
@@ -75,31 +79,31 @@ paxos::MessageType PaxosInstanceImpl::step(const paxos::Message& msg)
     case MessageType::ACCPT_RSP:
         {
             assert(PropState::WAIT_ACCEPT == prop_state_);
-            assert(true == msg.accepted_value.empty());
+            assert(true == msg.accepted_value().empty());
             auto next_prop_state = stepAcceptRsp(
-                    msg.prop_num, msg.peer_id, msg.accepted_num);
+                    msg.proposed_num(), msg.peer_id(), msg.accepted_num());
             rsp_msg_type = updatePropState(next_prop_state);
             logdebug("%s rsp_msg_type %d\n", 
                     __func__, static_cast<int>(rsp_msg_type));
         }
         break;
     case MessageType::PROP:
-        updatePromised(msg.prop_num);
+        updatePromised(msg.proposed_num());
         rsp_msg_type = MessageType::PROP_RSP;
         break;
     case MessageType::ACCPT:
-        updateAccepted(msg.prop_num, msg.accepted_value);
+        updateAccepted(msg.proposed_num(), msg.accepted_value());
         rsp_msg_type = MessageType::ACCPT_RSP;
         break;
     case MessageType::CHOSEN:
         {
-            if (msg.accepted_num == accepted_num_) {
+            if (msg.accepted_num() == accepted_num_) {
                 // mark as chosen
                 rsp_msg_type = updatePropState(PropState::CHOSEN);
                 break;
             }
 
-            assert(false == msg.accepted_value.empty());
+            assert(false == msg.accepted_value().empty());
 
             // reset
             if (prop_num_gen_.Get() < promised_num_) {
@@ -112,23 +116,21 @@ paxos::MessageType PaxosInstanceImpl::step(const paxos::Message& msg)
             assert(false == updatePromised(prop_num_gen_.Get()));
             // self accepted
             assert(false == updateAccepted(
-                        prop_num_gen_.Get(), msg.accepted_value));
+                        prop_num_gen_.Get(), msg.accepted_value()));
             updatePropState(PropState::CHOSEN);
         }
         break;
 
     default:
-        hassert(false, "%s msgtype %u", __func__, msg.type);
+        hassert(false, "%s msgtype %u", __func__, msg.type());
     };
 
     return rsp_msg_type;
 }
 
-paxos::MessageType 
+MessageType 
 PaxosInstanceImpl::updatePropState(PropState next_prop_state)
 {
-    using namespace paxos;
-
     MessageType rsp_msg_type = MessageType::NOOP;
     prop_state_ = next_prop_state;
     switch (prop_state_) {
@@ -176,7 +178,7 @@ PaxosInstanceImpl::updatePropState(PropState next_prop_state)
     return rsp_msg_type;
 }
 
-int PaxosInstanceImpl::beginPropose(const std::string& proposing_value)
+int PaxosInstanceImpl::beginPropose(const gsl::cstring_view<>& proposing_value)
 {
     if (PropState::NIL != prop_state_ || 0 != accepted_num_)  
     {
@@ -188,7 +190,7 @@ int PaxosInstanceImpl::beginPropose(const std::string& proposing_value)
 
     assert(PropState::NIL == prop_state_);
     prop_state_ = PropState::PREPARE;
-    proposing_value_ = proposing_value;
+    proposing_value_ = string{proposing_value.data(), proposing_value.size()};
 
     if (prop_num_gen_.Get() < promised_num_) {
         uint64_t prev_prop_num = prop_num_gen_.Get();
@@ -339,9 +341,6 @@ bool PaxosInstanceImpl::updateAccepted(
 
 
 
-} // namespace impl 
-
-
 
 PaxosInstance::PaxosInstance(int major_cnt, uint64_t prop_num)
     : ins_impl_(major_cnt, prop_num)
@@ -352,7 +351,7 @@ PaxosInstance::PaxosInstance(int major_cnt, uint64_t prop_num)
 PaxosInstance::~PaxosInstance() = default;
 
 
-int PaxosInstance::Propose(const std::string& proposing_value)
+int PaxosInstance::Propose(const gsl::cstring_view<>& proposing_value)
 {
     return ins_impl_.beginPropose(proposing_value);
 }

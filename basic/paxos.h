@@ -4,22 +4,18 @@
 #include <mutex>
 #include <condition_variable>
 #include <stdint.h>
+#include "gsl.h"
 
 namespace paxos {
 
 class PaxosImpl;
-struct Message;
-
-namespace proto {
-
+class Message;
 class HardState;
 
-} // namespace proto
 
 typedef std::function<int(
-        uint64_t,
-        const std::unique_ptr<proto::HardState>&, 
-        const std::unique_ptr<Message>&)> Callback;
+        std::unique_ptr<HardState>, 
+        std::unique_ptr<Message>)> Callback;
 
 
 class Paxos {
@@ -32,7 +28,7 @@ public:
     ~Paxos();
 
     std::tuple<int, uint64_t>
-        Propose(const std::string& proposing_value, Callback callback);
+        Propose(gsl::cstring_view<> proposing_value, Callback callback);
 
     int Step(uint64_t index, const Message& msg, Callback callback);
 
@@ -41,6 +37,9 @@ public:
     uint64_t GetMaxIndex();
     uint64_t GetCommitedIndex();
     uint64_t GetSelfId();
+
+    // add for test
+    std::tuple<std::string, std::string> GetInfo(uint64_t index);
 
 private:
     std::mutex paxos_mutex_;

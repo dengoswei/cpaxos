@@ -185,7 +185,8 @@ void StartServer(uint64_t selfid, const std::map<uint64_t, std::string>& groups)
     return ;
 }
 
-int SimplePropose(uint64_t svrid, const std::map<uint64_t, std::string>& groups)
+int SimplePropose(
+        uint64_t svrid, const std::map<uint64_t, std::string>& groups)
 {
     GlogClientImpl client(svrid, 
             grpc::CreateChannel(groups.at(svrid), grpc::InsecureCredentials()));
@@ -193,7 +194,17 @@ int SimplePropose(uint64_t svrid, const std::map<uint64_t, std::string>& groups)
     string sData("dengos@test.com");
     int ret = client.Propose({sData.data(), sData.size()});
     logdebug("client.Propose svrid %" PRIu64  " ret %d", svrid, ret);
-    return ret;
+
+    for (int i = 0; i < 3; ++i) {
+        string info, data;
+
+        tie(info, data) = client.GetGlog(1);
+        logdebug("try i %d index 1 info %s data %s", 
+                i, info.c_str(), data.c_str());
+        sleep(1);
+    }
+
+    return 0;
 }
 
     int
@@ -205,13 +216,6 @@ main ( int argc, char *argv[] )
 
     auto groups = config.GetGroups();
 
-
-//    vector<unique_ptr<thread>> vec_thread;
-//    for (auto piter : groups) {
-//        vec_thread.emplace_back(
-//                unique_ptr<thread>{new thread(StartServer, piter.first, cref(groups))});
-//    }
-
     vector<future<void>> vec;
     for (auto piter : groups) {
         auto res = async(launch::async, 
@@ -222,31 +226,9 @@ main ( int argc, char *argv[] )
     // test
     sleep(2);
     int ret = SimplePropose(1ull, groups);
-//    for (auto& p : vec_thread) {
-//        p->join();
-//    }
     for (auto& v : vec) {
         v.get();
     }
-
-//    unique_ptr<Paxos> paxos_log = 
-//        unique_ptr<Paxos>{new Paxos{config.GetSelfId(), groups.size()}};
-//    assert(nullptr != paxos_log);
-////    Paxos paxos_log(config.GetSelfId(), groups.size());
-//
-//    CallBack callback;
-//    GlogServiceImpl service(move(paxos_log), callback);
-//    assert(nullptr == paxos_log);
-//
-//    grpc::ServerBuilder builder;
-//    builder.AddListeningPort(
-//            groups[config.GetSelfId()], grpc::InsecureServerCredentials());
-//    builder.RegisterService(&service);
-//
-//    unique_ptr<grpc::Server> server(builder.BuildAndStart());
-//    cout << "Server listening on " << groups[config.GetSelfId()] << endl;
-//
-//    server->Wait();
 
     return EXIT_SUCCESS;
 }				/* ----------  end of function main  ---------- */
