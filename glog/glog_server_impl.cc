@@ -14,12 +14,33 @@ using namespace glog;
 std::tuple<bool, uint64_t, uint64_t>
     FindMostUpdatePeer(
             uint64_t selfid, 
-            uint64_t commited_index, 
+            uint64_t self_commited_index, 
             const std::map<uint64_t, std::string>& groups)
 {
-    // TODO
+    uint64_t peer_id = 0;
+    uint64_t peer_commited_index = 0;
+    // rand-shuffle the groups ?
+    for (auto& piter : groups) {
+        if (piter.first == selfid) {
+            continue;
+        }
 
-    return make_tuple(true, 0ull, 0ull);
+        GlogClientImpl client(piter.first, grpc::CreateChannel(
+                    piter.second, grpc::InsecureCredentials()));
+        int retcode = 0;
+        uint64_t max_index = 0;
+        uint64_t commited_index = 0;
+        tie(retcode, max_index, commited_index) = client.GetPaxosInfo();
+        if (0 == retcode) {
+            if (commited_index > peer_commited_index) {
+                peer_id = piter.first;
+                peer_commited_index = commited_index;
+            }
+        }
+    }
+
+    return make_tuple(
+            peer_commited_index <= self_commited_index, peer_id, peer_commited_index);
 }
 
 } // namespace
