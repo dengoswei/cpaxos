@@ -169,7 +169,7 @@ void StartServer(uint64_t selfid, const std::map<uint64_t, std::string>& groups)
     assert(nullptr != paxos_log);
 
     CallBack callback(selfid, groups);
-    GlogServiceImpl service(move(paxos_log), callback);
+    GlogServiceImpl service(groups, move(paxos_log), callback);
     assert(nullptr == paxos_log);
 
     grpc::ServerBuilder builder;
@@ -186,25 +186,45 @@ void StartServer(uint64_t selfid, const std::map<uint64_t, std::string>& groups)
 }
 
 int SimplePropose(
-        uint64_t svrid, const std::map<uint64_t, std::string>& groups)
+        int index, 
+        uint64_t svrid, 
+        const std::map<uint64_t, std::string>& groups)
 {
     GlogClientImpl client(svrid, 
             grpc::CreateChannel(groups.at(svrid), grpc::InsecureCredentials()));
 
     string sData("dengos@test.com");
     int ret = client.Propose({sData.data(), sData.size()});
-    logdebug("client.Propose svrid %" PRIu64  " ret %d", svrid, ret);
+    logdebug("try index %d client.Propose svrid %" PRIu64  " ret %d", 
+            index, svrid, ret);
 
-    for (int i = 0; i < 3; ++i) {
+    {
         string info, data;
 
-        tie(info, data) = client.GetGlog(1);
-        logdebug("try i %d index 1 info %s data %s", 
-                i, info.c_str(), data.c_str());
-        sleep(1);
+        tie(info, data) = client.GetGlog(index);
+        logdebug("svrid %" PRIu64 " index %d info %s data %s", 
+                svrid, index, info.c_str(), data.c_str());
     }
 
-    return 0;
+    {
+        int retcode = 0;
+        uint64_t max_index = 0;
+        uint64_t commited_index = 0;
+        tie(retcode, max_index, commited_index) = client.GetPaxosInfo();
+        logdebug("client.GetPaxosInfo retcode %d max_index %" PRIu64 
+                 " commited_index %" PRIu64, 
+                 retcode, max_index, commited_index);
+    }
+
+    return ret;
+}
+
+void SimpleTryCatchUp(
+        uint64_t svrid, const std::map<uint64_t, std::string>& groups)
+{
+    GlogClientImpl client(svrid, 
+            grpc::CreateChannel(groups.at(svrid), grpc::InsecureCredentials()));
+    client.TryCatchUp();
 }
 
     int
@@ -225,7 +245,19 @@ main ( int argc, char *argv[] )
 
     // test
     sleep(2);
-    int ret = SimplePropose(1ull, groups);
+    for (int i = 0; i < 10;) {
+        int ret = SimplePropose(i+1, 1ull, groups);
+        if (0 == ret) {
+            ++i;
+            continue;
+        }
+
+        // else
+        usleep(1000);
+    }
+
+    SimpleTryCatchUp(1ull, groups);
+
     for (auto& v : vec) {
         v.get();
     }

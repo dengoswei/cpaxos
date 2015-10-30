@@ -29,6 +29,10 @@ public:
 
     int Propose(gsl::cstring_view<> data);
 
+    std::tuple<int, uint64_t, uint64_t> GetPaxosInfo();
+
+    void TryCatchUp();
+
     std::tuple<std::string, std::string> GetGlog(uint64_t index);
 
 private:

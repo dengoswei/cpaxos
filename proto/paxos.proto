@@ -54,6 +54,8 @@ enum MessageType {
     ACCPT_RSP = 5; 
 
     CHOSEN = 6; 
+
+    CATCHUP = 10;
 };
 
 message Message {

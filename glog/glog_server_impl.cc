@@ -1,4 +1,5 @@
 #include "glog_server_impl.h"
+#include "glog_client_impl.h"
 #include "paxos.h"
 #include "paxos.pb.h"
 #include "utils.h"
@@ -6,12 +7,31 @@
 
 using namespace std;
 
+namespace {
+
+using namespace glog;
+
+std::tuple<bool, uint64_t, uint64_t>
+    FindMostUpdatePeer(
+            uint64_t selfid, 
+            uint64_t commited_index, 
+            const std::map<uint64_t, std::string>& groups)
+{
+    // TODO
+
+    return make_tuple(true, 0ull, 0ull);
+}
+
+} // namespace
+
 namespace glog {
 
 GlogServiceImpl::GlogServiceImpl(
+        const std::map<uint64_t, std::string>& groups, 
         std::unique_ptr<paxos::Paxos>&& paxos_log, 
         paxos::Callback callback)
-    : paxos_log_(move(paxos_log))
+    : groups_(groups)
+    , paxos_log_(move(paxos_log))
     , callback_(move(callback))
 {
     assert(nullptr != paxos_log_);
@@ -76,6 +96,78 @@ GlogServiceImpl::Propose(
 }
 
 grpc::Status
+GlogServiceImpl::GetPaxosInfo(
+        grpc::ServerContext* context, 
+        const glog::NoopMsg* request, 
+        glog::PaxosInfo* reply)
+{
+    assert(nullptr != context);
+    assert(nullptr != request);
+    assert(nullptr != reply);
+
+    {
+        string peer = context->peer();
+        logdebug("peer %s", peer.c_str());
+    }
+
+    uint64_t selfid = 0;
+    uint64_t max_index = 0;
+    uint64_t commited_index = 0;
+    tie(selfid, max_index, commited_index) = paxos_log_->GetPaxosInfo();
+    reply->set_max_index(max_index);
+    reply->set_commited_index(commited_index);
+    return grpc::Status::OK;
+}
+
+grpc::Status
+GlogServiceImpl::TryCatchUp(
+        grpc::ServerContext* context, 
+        const glog::NoopMsg* request, 
+        glog::NoopMsg* reply)
+{
+    assert(nullptr != context);
+    assert(nullptr != request);
+    assert(nullptr != reply);
+
+    {
+        string peer = context->peer();
+        logdebug("peer %s", peer.c_str());
+    }
+
+    uint64_t selfid = 0;
+    uint64_t max_index = 0;
+    uint64_t commited_index = 0;
+    tie(selfid, max_index, commited_index) = paxos_log_->GetPaxosInfo();
+    
+    bool most_recent = false;
+    uint64_t peer_id = 0;
+    uint64_t peer_commited_index = 0;
+    tie(most_recent, peer_id, peer_commited_index) = 
+        FindMostUpdatePeer(selfid, commited_index, groups_);
+
+    if (false == most_recent) {
+        GlogClientImpl client(peer_id, grpc::CreateChannel(
+                    groups_.at(peer_id), grpc::InsecureCredentials()));
+        for (uint64_t catchup_index = commited_index + 1; 
+                catchup_index <= peer_commited_index; ++catchup_index) {
+            
+            paxos::Message msg;
+            msg.set_type(paxos::MessageType::CATCHUP);
+            msg.set_peer_id(selfid);
+            msg.set_to_id(peer_id);
+            msg.set_index(catchup_index);
+
+            client.PostMsg(msg);
+        }
+    }
+
+    logdebug("most_recent %d seldid %" PRIu64 
+            " commited_index %" PRIu64 " peer_commited_index %" PRIu64, 
+            most_recent, selfid, commited_index, peer_commited_index);
+    return grpc::Status::OK;
+}
+
+grpc::Status
 GlogServiceImpl::GetGlog(
         grpc::ServerContext* context, 
         const glog::GetGlogRequest* request, 
@@ -87,7 +179,8 @@ GlogServiceImpl::GetGlog(
 
     {
         string peer = context->peer();
-        logdebug("GetGlog request index %" PRIu64 "", request->index());
+        logdebug("GetGlog request index %" PRIu64 " %s", 
+                request->index(), peer.c_str());
     }
 
     string info, data;

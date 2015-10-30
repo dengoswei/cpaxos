@@ -24,6 +24,7 @@ class GlogServiceImpl final : public Glog::Service {
 public:
     
     GlogServiceImpl(
+            const std::map<uint64_t, std::string>& groups, 
             std::unique_ptr<paxos::Paxos>&& paxos_log, 
             paxos::Callback callback); 
 
@@ -39,12 +40,25 @@ public:
             const glog::ProposeRequest* request, 
             glog::ProposeResponse* reply)    override;
 
+    // internal use
+    grpc::Status GetPaxosInfo(
+            grpc::ServerContext* context, 
+            const glog::NoopMsg* request, 
+            glog::PaxosInfo* reply) override;
+
+    grpc::Status TryCatchUp(
+            grpc::ServerContext* context, 
+            const glog::NoopMsg* request, 
+            glog::NoopMsg* reply) override;
+
+    // test
     grpc::Status GetGlog(
             grpc::ServerContext* context, 
             const glog::GetGlogRequest* request, 
             glog::GetGlogResponse* reply)    override;
 
 private:
+    std::map<uint64_t, std::string> groups_;
     std::unique_ptr<paxos::Paxos> paxos_log_;
     paxos::Callback callback_;
 }; 

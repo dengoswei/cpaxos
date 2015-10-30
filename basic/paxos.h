@@ -38,6 +38,8 @@ public:
     uint64_t GetCommitedIndex();
     uint64_t GetSelfId();
 
+    std::tuple<uint64_t, uint64_t, uint64_t> GetPaxosInfo();
+
     // add for test
     std::tuple<std::string, std::string> GetInfo(uint64_t index);
 

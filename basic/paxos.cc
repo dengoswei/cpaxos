@@ -185,6 +185,15 @@ uint64_t Paxos::GetSelfId()
     return paxos_impl_->GetSelfId();
 }
 
+std::tuple<uint64_t, uint64_t, uint64_t> Paxos::GetPaxosInfo()
+{
+    std::lock_guard<std::mutex> lock(paxos_mutex_);
+    return make_tuple(
+            paxos_impl_->GetSelfId(),
+            paxos_impl_->GetMaxIndex(), 
+            paxos_impl_->GetCommitedIndex());
+}
+
 // add for test
 std::tuple<std::string, std::string> Paxos::GetInfo(uint64_t index)
 {

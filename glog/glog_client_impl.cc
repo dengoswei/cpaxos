@@ -57,6 +57,41 @@ int GlogClientImpl::Propose(gsl::cstring_view<> data)
     return static_cast<int>(status.error_code());
 }
 
+std::tuple<int, uint64_t, uint64_t> GlogClientImpl::GetPaxosInfo()
+{
+    NoopMsg request;
+    PaxosInfo reply;
+
+    ClientContext context;
+    Status status = stub_->GetPaxosInfo(&context, request, &reply);
+    if (status.ok()) {
+        return std::make_tuple(0, reply.max_index(), reply.commited_index());
+    }
+
+    auto error_message = status.error_message();
+    logerr("Propose failed error_code %d error_message %s", 
+            static_cast<int>(status.error_code()), error_message.c_str());
+    assert(0 != static_cast<int>(status.error_code()));
+    return std::make_tuple(static_cast<int>(status.error_code()), 0ull, 0ull);
+}
+
+void GlogClientImpl::TryCatchUp()
+{
+    NoopMsg request;
+    NoopMsg reply;
+
+    ClientContext context;
+    Status status = stub_->TryCatchUp(&context, request, &reply);
+    if (status.ok()) {
+        return ;
+    }
+
+    auto error_message = status.error_message();
+    logerr("Propose failed error_code %d error_message %s", 
+            static_cast<int>(status.error_code()), error_message.c_str());
+    return ;
+}
+
 std::tuple<std::string, std::string> GlogClientImpl::GetGlog(uint64_t index)
 {
     assert(0 < index);
@@ -68,13 +103,13 @@ std::tuple<std::string, std::string> GlogClientImpl::GetGlog(uint64_t index)
     ClientContext context; 
     Status status = stub_->GetGlog(&context, request, &reply);
     if (status.ok()) {
-        return make_tuple(reply.info(), reply.data());
+        return std::make_tuple(reply.info(), reply.data());
     }
 
     auto error_message = status.error_message();
     logerr("Propose failed error_code %d error_message %s", 
             static_cast<int>(status.error_code()), error_message.c_str());
-    return make_tuple(move(error_message), "");
+    return std::make_tuple(move(error_message), "");
 }
 
 GlogAsyncClientImpl::GlogAsyncClientImpl(

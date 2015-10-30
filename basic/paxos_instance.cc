@@ -64,8 +64,8 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
                         static_cast<int>(prop_state_));
                 break;
             }
-            hassert(PropState::WAIT_PREPARE == prop_state_, 
-                    "prop_stat_ %d", static_cast<int>(prop_state_));
+
+            assert(PropState::WAIT_PREPARE == prop_state_);
             auto next_prop_state = stepPrepareRsp(
                     msg.proposed_num(), msg.peer_id(), 
                     msg.promised_num(), msg.accepted_num(), 
@@ -78,6 +78,12 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
         break;
     case MessageType::ACCPT_RSP:
         {
+            if (PropState::WAIT_ACCEPT != prop_state_) {
+                logdebug("msgtype::ACCPT_RSP but instance in stat %d", 
+                        static_cast<int>(prop_state_));
+                break;
+            }
+
             assert(PropState::WAIT_ACCEPT == prop_state_);
             assert(true == msg.accepted_value().empty());
             auto next_prop_state = stepAcceptRsp(
@@ -118,6 +124,12 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             assert(false == updateAccepted(
                         prop_num_gen_.Get(), msg.accepted_value()));
             updatePropState(PropState::CHOSEN);
+        }
+        break;
+
+    case MessageType::CATCHUP:
+        if (PropState::CHOSEN == prop_state_) {
+            rsp_msg_type = MessageType::CHOSEN;
         }
         break;
 
