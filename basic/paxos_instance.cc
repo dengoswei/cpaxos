@@ -2,7 +2,10 @@
 
 using namespace std;
 
+#define PROP_TIMEOUT_TICK 100 // 100ms ?
+
 namespace {
+
 
 void updateRspVotes(
         uint64_t peer_id, bool vote, 
@@ -127,9 +130,37 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
         }
         break;
 
-    case MessageType::CATCHUP:
-        if (PropState::CHOSEN == prop_state_) {
-            rsp_msg_type = MessageType::CHOSEN;
+    // propose
+    case MessageType::BEGIN_PROP:
+        {
+            if (PropState::NIL != prop_state_) {
+                logerr("msgtype::BEGIN_PROP but instance in stat %d", 
+                        static_cast<int>(prop_state_));
+                break;
+            }
+
+            assert(PropState::NIL == prop_state_);
+            auto next_prop_state = stepBeginPropose(
+                    false, msg.proposed_num(), msg.accepted_value());
+            assert(PropState::PREPARE == next_prop_state);
+            rsp_msg_type = updatePropState(next_prop_state);
+            assert(PropState::WAIT_PREPARE == prop_state_);
+        }
+        break;
+    case MessageType::TRY_REDO_PROP:
+        {
+            if (PROP_TIMEOUT_TICK > 
+                    GetCurrentTick() - active_proposer_tick_) {
+                // no yet timeout => do nothing
+                break;
+            }
+
+            // enable: try_prop_
+            auto next_prop_state = stepBeginPropose(
+                    true, msg.proposed_num(), msg.accepted_value());
+            assert(PropState::PREPARE == next_prop_state);
+            rsp_msg_type = updatePropState(next_prop_state);
+            assert(PropState::WAIT_PREPARE == prop_state_);
         }
         break;
 
@@ -190,35 +221,54 @@ PaxosInstanceImpl::updatePropState(PropState next_prop_state)
     return rsp_msg_type;
 }
 
-int PaxosInstanceImpl::beginPropose(const gsl::cstring_view<>& proposing_value)
+PropState PaxosInstanceImpl::stepBeginPropose(
+        bool force, 
+        uint64_t hint_proposed_num, 
+        const std::string& proposing_value)
 {
-    if (PropState::NIL != prop_state_ || 0 != accepted_num_)  
-    {
-        // refuse to propose if
-        // - prop in this instance before;
-        // - instance have accepted other prop before
-        return -1;
-    }
+    assert(false == force || PropState::NIL == prop_state_);
 
-    assert(PropState::NIL == prop_state_);
     prop_state_ = PropState::PREPARE;
-    proposing_value_ = string{proposing_value.data(), proposing_value.size()};
+    proposing_value_ = proposing_value;
 
-    if (prop_num_gen_.Get() < promised_num_) {
-        uint64_t prev_prop_num = prop_num_gen_.Get();
-        prop_num_gen_.Next(promised_num_);
-        assert(prev_prop_num < prop_num_gen_.Get());
-    }
-    assert(prop_num_gen_.Get() >= promised_num_);
-    auto next_prop_state = beginPreparePhase();
-    hassert(PropState::WAIT_PREPARE == next_prop_state, 
-            "%" PRIu64 " %" PRIu64 " %d\n", 
-            prop_num_gen_.Get(), promised_num_, 
-            static_cast<int>(prop_state_));
-    updatePropState(next_prop_state);
-    assert(PropState::WAIT_PREPARE == prop_state_);
-    return 0;
+    promised_num_ = max(promised_num_, hint_proposed_num);
+    return PropState::PREPARE;
 }
+
+//int PaxosInstanceImpl::beginPropose(
+//        const gsl::cstring_view<>& proposing_value, 
+//        bool force)
+//{
+//    if (PropState::NIL != prop_state_ 
+//            || 0 != accepted_num_
+//            || !force)  
+//    {
+//        // refuse to propose if
+//        // - prop in this instance before;
+//        // - instance have accepted other prop before
+//        return -1;
+//    }
+//
+//    assert(PropState::NIL == prop_state_ || true == force);
+//    prop_state_ = PropState::PREPARE;
+//    proposing_value_ = string{
+//        proposing_value.data(), proposing_value.size()};
+//
+//    if (prop_num_gen_.Get() < promised_num_) {
+//        uint64_t prev_prop_num = prop_num_gen_.Get();
+//        prop_num_gen_.Next(promised_num_);
+//        assert(prev_prop_num < prop_num_gen_.Get());
+//    }
+//    assert(prop_num_gen_.Get() >= promised_num_);
+//    auto next_prop_state = beginPreparePhase();
+//    hassert(PropState::WAIT_PREPARE == next_prop_state, 
+//            "%" PRIu64 " %" PRIu64 " %d\n", 
+//            prop_num_gen_.Get(), promised_num_, 
+//            static_cast<int>(prop_state_));
+//    updatePropState(next_prop_state);
+//    assert(PropState::WAIT_PREPARE == prop_state_);
+//    return 0;
+//}
 
 PropState PaxosInstanceImpl::beginPreparePhase()
 {
@@ -328,6 +378,7 @@ PropState PaxosInstanceImpl::stepAcceptRsp(
 
 bool PaxosInstanceImpl::updatePromised(uint64_t prop_num)
 {
+    active_proposer_tick_ = GetCurrentTick();
     if (promised_num_ > prop_num) {
         // reject
         return true;
@@ -340,6 +391,7 @@ bool PaxosInstanceImpl::updatePromised(uint64_t prop_num)
 bool PaxosInstanceImpl::updateAccepted(
         uint64_t prop_num, const std::string& prop_value)
 {
+    active_proposer_tick_ = GetCurrentTick();
     if (promised_num_ > prop_num) {
         // reject
         return true;
@@ -363,10 +415,10 @@ PaxosInstance::PaxosInstance(int major_cnt, uint64_t prop_num)
 PaxosInstance::~PaxosInstance() = default;
 
 
-int PaxosInstance::Propose(const gsl::cstring_view<>& proposing_value)
-{
-    return ins_impl_.beginPropose(proposing_value);
-}
+//int PaxosInstance::Propose(const gsl::cstring_view<>& proposing_value)
+//{
+//    return ins_impl_.beginPropose(proposing_value);
+//}
 
 MessageType PaxosInstance::Step(const Message& msg)
 {

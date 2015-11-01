@@ -39,9 +39,14 @@ public:
     const std::string& getAcceptedValue() const { return accepted_value_; }
 
     // proposer
-    int beginPropose(const gsl::cstring_view<>& proposing_value);
+    // int beginPropose(const gsl::cstring_view<>& proposing_value);
     PropState beginPreparePhase();
     PropState beginAcceptPhase();
+
+    PropState stepBeginPropose(
+            bool force, 
+            uint64_t hint_proposed_num, 
+            const std::string& proposing_value);
 
     PropState stepPrepareRsp(
             uint64_t prop_num, 
@@ -52,6 +57,7 @@ public:
     PropState stepAcceptRsp(
             uint64_t prop_num, 
             uint64_t peer_id, uint64_t peer_promised_num);
+
 
     // acceptor
     bool updatePromised(uint64_t prop_num);
@@ -73,6 +79,8 @@ private:
     uint64_t promised_num_ = 0;
     uint64_t accepted_num_ = 0;
     std::string accepted_value_;
+
+    uint64_t active_proposer_tick_ = 0;
 };
 
 
@@ -85,7 +93,7 @@ public:
     // over-come std::unque_ptr uncomplete type;
     ~PaxosInstance();
 
-    int Propose(const gsl::cstring_view<>& proposing_value);
+    // int Propose(const gsl::cstring_view<>& proposing_value);
 
     MessageType Step(const Message& msg);
 

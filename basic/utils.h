@@ -55,7 +55,10 @@ namespace paxos {
 //    std::string accepted_value;
 //};
 
-
+inline uint64_t GetCurrentTick()
+{
+    return 0ull; // TODO
+}
 
 inline uint64_t prop_num_compose(uint8_t id, uint64_t prop_cnt)
 {

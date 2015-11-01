@@ -22,9 +22,14 @@ TEST_F(PaxosInstanceTest, SimpleImplPropose)
 
     // begin proposed
     auto proposing_value = str_gen_.Next();
-    gsl::cstring_view<> pvalue_view{proposing_value.data(), proposing_value.size()};
-    int ret = ins.beginPropose(pvalue_view);
-    ASSERT_EQ(0, ret);
+    {
+        Message msg;
+        msg.set_type(MessageType::BEGIN_PROP);
+        msg.set_accepted_value(proposing_value);
+    
+        auto rsp_msg_type = ins.step(msg);
+        assert(MessageType::PROP == rsp_msg_type);
+    }
     ASSERT_EQ(ins.getPropState(), PropState::WAIT_PREPARE);
     // self promised
     ASSERT_EQ(ins.getProposeNum(), ins.getPromisedNum());
@@ -59,8 +64,13 @@ TEST_F(PaxosInstanceTest, SimplePropose)
     PaxosInstance ins(major_cnt, prop_num_compose(selfid, 0));
 
     auto proposing_value = str_gen_.Next();
-    int ret = ins.Propose(proposing_value);
-    ASSERT_EQ(0, ret);
+    {
+        Message msg;
+        msg.set_type(MessageType::BEGIN_PROP);
+        msg.set_accepted_value(proposing_value);
+        auto rsp_msg_type = ins.Step(msg);
+        assert(MessageType::PROP == rsp_msg_type);
+    }
 
     Message msg;
     msg.set_type(MessageType::PROP_RSP);

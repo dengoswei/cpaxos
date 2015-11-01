@@ -63,14 +63,20 @@ Paxos::Propose(gsl::cstring_view<> proposing_value, Callback callback)
         // auto new_ins = buildPaxosInstance(peer_set_.size(), selfid_, 0);
         new_ins = paxos_impl_->BuildNewPaxosInstance();
         assert(nullptr != new_ins);
-        int ret = new_ins->Propose(proposing_value);
-        assert(0 == ret); // always ret 0 on new PaxosInstance 
 
         Message fake_msg;
         fake_msg.set_to_id(paxos_impl_->GetSelfId());
+        fake_msg.set_type(MessageType::BEGIN_PROP);
+        fake_msg.set_accepted_value(string{
+                proposing_value.data(), proposing_value.size()});
+        auto rsp_msg_type = new_ins->Step(fake_msg); 
+        if (MessageType::PROP != rsp_msg_type) {
+            return make_tuple(-2, 0);
+        }
+
         tie(store_seq, rsp_msg) = 
             paxos_impl_->ProduceRsp(
-                    new_index, new_ins.get(), fake_msg, MessageType::PROP);
+                    new_index, new_ins.get(), fake_msg, rsp_msg_type);
         if (0 != store_seq) {
             hs = CreateHardState(new_index, new_ins.get());
             assert(nullptr != hs);
@@ -91,7 +97,8 @@ Paxos::Propose(gsl::cstring_view<> proposing_value, Callback callback)
         return make_tuple(-2, 0);
     }
 
-    paxos_impl_->CommitProposingInstance(new_index, store_seq, move(new_ins));
+    paxos_impl_->CommitProposingInstance(
+            new_index, store_seq, move(new_ins));
     assert(nullptr == new_ins);
     return make_tuple(0, new_index);
 }
