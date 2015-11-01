@@ -2,4 +2,4 @@
 
 so..
 
-deps: grpc rapidjson 
+deps: protobuf 

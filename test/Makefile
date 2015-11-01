@@ -6,12 +6,11 @@ CXXFLAGS += -g -Wall -Wextra
 
 TESTS = utils_test paxos_instance_test paxos_test paxos_pb_test config_test glog_test
 
-INCLS += -I../basic -I../proto -I../glog
+INCLS += -I../ -I../cpaxospb
 INCLS += -I/Users/dengoswei/open-src/github.com/microsoft/GSL/include
 INCLS += -I/Users/dengoswei/project/include
 LINKS += -L/Users/dengoswei/project/lib
 LINKS += -lpthread -lprotobuf
-LINKS += -lgrpc++_unsecure -lgrpc -lgpr -ldl
 
 GTEST_HEADERS = $(GTEST_DIR)/include/gtest/*.h \
                 $(GTEST_DIR)/include/gtest/internal/*.h
@@ -19,10 +18,15 @@ GTEST_HEADERS = $(GTEST_DIR)/include/gtest/*.h \
 CPPCOMPILE = $(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(INCLS) -c -o $@
 BUILDEXE = $(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ $^ $(LINKS)
 
+PROTOS_PATH = cpaxospb
+PROTOC = /Users/dengoswei/project/bin/protoc
+GRPC_CPP_PLUGIN = grpc_cpp_plugin
+GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
+
 all: $(TESTS)
 
 clean :
-	rm -f $(TESTS) gtest.a gtest_main.a *.o ../basic/*.o ../proto/*.o ../glog/*.o
+	rm -f $(TESTS) gtest.a gtest_main.a *.o ../*.o ../cpaxospb/*.o 
 
 # Builds gtest.a and gtest_main.a.
 
@@ -48,26 +52,21 @@ gtest.a : gtest-all.o
 gtest_main.a : gtest-all.o gtest_main.o
 	$(AR) $(ARFLAGS) $@ $^
 
-
 utils_test: utils_test.o gtest_main.a
 	$(BUILDEXE)
 
-paxos_instance_test: paxos_instance_test.o ../basic/paxos_instance.o ../proto/paxos.pb.o gtest_main.a
+paxos_instance_test: paxos_instance_test.o ../paxos_instance.o ../cpaxospb/paxos.pb.o gtest_main.a
 	$(BUILDEXE)
 
-paxos_test: paxos_test.o ../basic/paxos_instance.o ../basic/paxos_impl.o ../basic/paxos.o ../proto/paxos.pb.o gtest_main.a
+paxos_test: paxos_test.o ../paxos_instance.o ../paxos_impl.o ../paxos.o ../cpaxospb/paxos.pb.o gtest_main.a
 	$(BUILDEXE)
 
-paxos_pb_test: paxos_pb_test.o ../proto/paxos.pb.o gtest_main.a
+paxos_pb_test: paxos_pb_test.o ../cpaxospb/paxos.pb.o gtest_main.a
 	$(BUILDEXE)
 
-config_test: config_test.o ../basic/config.o gtest_main.a
-	$(BUILDEXE)
+%.pb.cc: ../cpaxospb/%.proto
+	$(PROTOC) -I $(PROTOS_PATH) --cpp_out=../cpaxospb/ $<
 
-glog_test: glog_test.o ../proto/glog.pb.o ../proto/glog.grpc.pb.o ../proto/paxos.pb.o \
-	../glog/glog_server_impl.o ../glog/glog_client_impl.o ../basic/paxos.o ../basic/paxos_impl.o \
-	../basic/paxos_instance.o ../basic/config.o
-	$(BUILDEXE)
 
 %.o:%.cc
 	$(CPPCOMPILE)
