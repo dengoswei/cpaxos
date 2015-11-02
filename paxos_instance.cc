@@ -149,8 +149,10 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
         break;
     case MessageType::TRY_REDO_PROP:
         {
-            if (PROP_TIMEOUT_TICK > 
-                    GetCurrentTick() - active_proposer_tick_) {
+            // TODO
+            if (ACTIVE_TIME_OUT > 
+                    chrono::duration_cast<chrono::milliseconds>(
+                        chrono::system_clock::now() - active_proposer_time_)) {
                 // no yet timeout => do nothing
                 break;
             }

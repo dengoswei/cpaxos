@@ -27,10 +27,11 @@ public:
     // over-come std::unque_ptr uncomplete type;
     ~Paxos();
 
-    std::tuple<int, uint64_t>
-        Propose(gsl::cstring_view<> proposing_value, Callback callback);
+    uint64_t Propose(gsl::cstring_view<> proposing_value, Callback callback);
 
-    int Step(uint64_t index, const Message& msg, Callback callback);
+    int TryActivePropose(uint64_t index, Callback callback);
+
+    int Step(const Message& msg, Callback callback);
 
     void Wait(uint64_t index);
 

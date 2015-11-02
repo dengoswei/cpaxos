@@ -16,11 +16,6 @@ namespace paxos {
 class Message;
 class PaxosInstance;
 
-//typedef std::function<int(
-//        uint64_t,
-//        std::unique_ptr<HardState>, 
-//        std::unique_ptr<Message>)> Callback;
-
 // NOT thread safe;
 class PaxosImpl {
 
@@ -39,31 +34,31 @@ public:
 
     uint64_t NextProposingIndex();
     std::unique_ptr<PaxosInstance> BuildNewPaxosInstance();
-    void DiscardProposingInstance(
-            uint64_t index, 
-            std::unique_ptr<PaxosInstance> proposing_ins);
-    void CommitProposingInstance(
-            uint64_t index, uint64_t store_seq, 
-            std::unique_ptr<PaxosInstance>&& proposing_ins);
+//    void DiscardProposingInstance(
+//            uint64_t index, 
+//            std::unique_ptr<PaxosInstance> proposing_ins);
+//    void CommitProposingInstance(
+//            uint64_t index, uint64_t store_seq, 
+//            std::unique_ptr<PaxosInstance>&& proposing_ins);
 
     bool IsChosen(uint64_t index) {
         assert(0 < index);
         return index <= commited_index_;
     }
 
-    bool IsProposing(uint64_t index) {
-        assert(0 < index);
-        return index == proposing_index_;
-    }
+//    bool IsProposing(uint64_t index) {
+//        assert(0 < index);
+//        return index == proposing_index_;
+//    }
 
     // may craete a new instance
-    PaxosInstance* GetInstance(uint64_t index);
+    PaxosInstance* GetInstance(uint64_t index, bool create);
     void CommitStep(uint64_t index, uint64_t store_seq);
 
     // hs seq id & rsp msg
     std::tuple<
         uint64_t, std::unique_ptr<Message>>
-    ProduceRsp(uint64_t index, 
+    ProduceRsp(
             const PaxosInstance* ins, 
             const Message& req_msg, 
             MessageType rsp_msg_type);
@@ -79,7 +74,7 @@ private:
     uint64_t max_index_ = 0;
     uint64_t commited_index_ = 0;
     uint64_t next_commited_index_ = 0;
-    uint64_t proposing_index_ = 0;
+    // uint64_t proposing_index_ = 0;
 
     uint64_t store_seq_ = 0;
 

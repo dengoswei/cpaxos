@@ -59,13 +59,11 @@ PaxosImpl::~PaxosImpl() = default;
 
 uint64_t PaxosImpl::NextProposingIndex()
 {
-    if (max_index_ != commited_index_ || 0 != proposing_index_) {
+    if (max_index_ != commited_index_) {
         return 0;
     }
     
-    assert(0 == proposing_index_);
-    proposing_index_ = max_index_ + 1;
-    return proposing_index_;
+    return max_index_ + 1;
 }
 
 std::unique_ptr<PaxosInstance>
@@ -74,53 +72,46 @@ PaxosImpl::BuildNewPaxosInstance()
     return buildPaxosInstance(group_size_, selfid_, 0);
 }
 
-void PaxosImpl::DiscardProposingInstance(
-        const uint64_t index, 
-        std::unique_ptr<PaxosInstance> proposing_ins)
-{
-    assert(index == proposing_index_);
-    assert(0 != proposing_ins);
-    assert(nullptr != proposing_ins);
-    assert(ins_map_.end() == ins_map_.find(index));
+//void PaxosImpl::DiscardProposingInstance(
+//        const uint64_t index, 
+//        std::unique_ptr<PaxosInstance> proposing_ins)
+//{
+//    assert(0 != proposing_ins);
+//    assert(nullptr != proposing_ins);
+//    assert(ins_map_.end() == ins_map_.find(index));
+//
+//    pending_index_.erase(index);
+//}
 
-    pending_index_.erase(index);
-    proposing_index_ = 0;
-}
+//void PaxosImpl::CommitProposingInstance(
+//        const uint64_t index, 
+//        const uint64_t store_seq, 
+//        std::unique_ptr<PaxosInstance>&& proposing_ins)
+//{
+//    assert(nullptr != proposing_ins);
+//    assert(ins_map_.end() == ins_map_.find(index));
+//    assert(0 != store_seq);
+//
+//    ins_map_[index] = move(proposing_ins);
+//    assert(nullptr == proposing_ins);
+//    max_index_ = max(max_index_, index);
+//
+//    if (pending_index_.end() != pending_index_.find(index)) {
+//        assert(0 != pending_index_[index]);
+//        if (store_seq == pending_index_[index]) {
+//            pending_index_.erase(index);
+//        }
+//    }
+//}
 
-void PaxosImpl::CommitProposingInstance(
-        const uint64_t index, 
-        const uint64_t store_seq, 
-        std::unique_ptr<PaxosInstance>&& proposing_ins)
-{
-    assert(index == proposing_index_);
-    assert(0 != proposing_index_);
-    assert(nullptr != proposing_ins);
-    assert(ins_map_.end() == ins_map_.find(index));
-    assert(0 != store_seq);
-
-    ins_map_[index] = move(proposing_ins);
-    assert(nullptr == proposing_ins);
-    max_index_ = max(max_index_, index);
-
-    if (pending_index_.end() != pending_index_.find(index)) {
-        assert(0 != pending_index_[index]);
-        if (store_seq == pending_index_[index]) {
-            pending_index_.erase(index);
-        }
-    }
-
-    proposing_index_ = 0;
-}
-
-PaxosInstance* PaxosImpl::GetInstance(uint64_t index)
+PaxosInstance* PaxosImpl::GetInstance(uint64_t index, bool create)
 {
     assert(0 < index);
-    if (IsProposing(index)) {
-        return nullptr;
-    }
-
-    assert(0 == proposing_index_);
     if (ins_map_.end() == ins_map_.find(index)) {
+        if (false == create) {
+            return nullptr;
+        }
+
         // need build a new paxos instance
         auto new_ins = 
             buildPaxosInstance(group_size_, selfid_, 0);
@@ -138,7 +129,6 @@ PaxosInstance* PaxosImpl::GetInstance(uint64_t index)
 void PaxosImpl::CommitStep(uint64_t index, uint64_t store_seq)
 {
     assert(0 < index);
-    assert(index != proposing_index_);
     assert(commited_index_ <= next_commited_index_);
     commited_index_ = next_commited_index_;
     if (pending_index_.end() != pending_index_.find(index)) {
@@ -151,7 +141,6 @@ void PaxosImpl::CommitStep(uint64_t index, uint64_t store_seq)
 
 std::tuple<uint64_t, std::unique_ptr<Message>>
 PaxosImpl::ProduceRsp(
-        uint64_t index, 
         const PaxosInstance* ins, 
         const Message& req_msg, 
         MessageType rsp_msg_type)
@@ -231,8 +220,8 @@ PaxosImpl::ProduceRsp(
         hassert(next_commited_index_ >= commited_index_, 
                 "commited_index_ %" PRIu64 "next_commited_index_ %" PRIu64, 
                 commited_index_, next_commited_index_);
-        if (index > next_commited_index_) {
-            chosen_set_.insert(index);
+        if (req_msg.index() > next_commited_index_) {
+            chosen_set_.insert(req_msg.index());
             for (auto next = next_commited_index_ + 1; 
                     next <= max_index_; ++next) {
                 if (0 == chosen_set_.count(next)) {
@@ -268,19 +257,19 @@ PaxosImpl::ProduceRsp(
         break;
     }
 
-    if (pending_index_.end() != pending_index_.find(index)) {
+    if (pending_index_.end() != pending_index_.find(req_msg.index())) {
         if (0 == seq) {
-            seq = pending_index_[index];
+            seq = pending_index_[req_msg.index()];
         }
     }
 
     if (0 != seq) {
-        assert(seq >= pending_index_[index]);
-        pending_index_[index] = seq;
+        assert(seq >= pending_index_[req_msg.index()]);
+        pending_index_[req_msg.index()] = seq;
     }
 
     if (nullptr != rsp_msg) {
-        rsp_msg->set_index(index);
+        rsp_msg->set_index(req_msg.index());
     }
 
     return make_tuple(seq, move(rsp_msg));

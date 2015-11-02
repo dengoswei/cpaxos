@@ -35,7 +35,8 @@ TEST_F(PaxosTest, SimpleImplPropose)
     Paxos* q = paxos_map_[2ull].get();
     assert(nullptr != q);
 
-    vector<tuple<uint64_t, Message>> vecMsg;
+    int ret = 0;
+    vector<Message> vecMsg;
     auto callback = [&](
             const unique_ptr<HardState>& hs, 
             const unique_ptr<Message>& rsp_msg) {
@@ -62,73 +63,62 @@ TEST_F(PaxosTest, SimpleImplPropose)
                      rsp_msg->accepted_value().c_str());
 
             Message msg = *rsp_msg;
-            vecMsg.emplace_back(make_tuple(rsp_msg->index(), msg));
+            vecMsg.emplace_back(move(msg));
         }
 
         return 0;
     };
 
-    int ret = 0;
-    uint64_t index = 0;
-    tie(ret, index) = p->Propose(proposing_value, callback);
-    hassert(0 == ret, "ret %d", ret);
+    uint64_t index = p->Propose(proposing_value, callback);
     assert(0 < index);
 
     // q: recv prop req, produce prop_rsp 
     {
-        uint64_t req_index = 0;
-        Message req_msg;
-        tie(req_index, req_msg) = vecMsg.back();
+        Message req_msg = vecMsg.back();
         vecMsg.clear();
         assert(MessageType::PROP == req_msg.type());
-        assert(index == req_index);
+        assert(index == req_msg.index());
         assert(0 == req_msg.to_id());
 
         req_msg.set_to_id(q->GetSelfId());
         assert(0 != req_msg.to_id());
-        ret = q->Step(req_index, req_msg, callback);
+        ret = q->Step(req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
     }
 
     // p: recv prop rsp, produce accpt req
     {
-        uint64_t req_index = 0;
-        Message req_msg;
-        tie(req_index, req_msg) = vecMsg.back();
+        Message req_msg = vecMsg.back();
         vecMsg.clear();
         assert(MessageType::PROP_RSP == req_msg.type());
-        assert(index == req_index);
+        assert(index == req_msg.index());
 
-        ret = p->Step(req_index, req_msg, callback);
+        ret = p->Step(req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
     }
 
     // q: recv accpt req, produce accpt_rsp
     {
-        uint64_t req_index = 0;
-        Message req_msg;
-        tie(req_index, req_msg) = vecMsg.back();
+        Message req_msg = vecMsg.back();
         vecMsg.clear();
         assert(MessageType::ACCPT == req_msg.type());
-        assert(index == req_index);
+        assert(index == req_msg.index());
         assert(0 == req_msg.to_id());
 
         req_msg.set_to_id(q->GetSelfId());
         assert(0 != req_msg.to_id());
-        ret = q->Step(req_index, req_msg, callback);
+        ret = q->Step(req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
     }
 
     // p: recv accpt rsp, => chosen
     {
-        uint64_t req_index = 0;
-        Message req_msg;
-        tie(req_index, req_msg) = vecMsg.back();
+        Message req_msg = vecMsg.back();
         vecMsg.clear();
         assert(MessageType::ACCPT_RSP == req_msg.type());
-        assert(index == req_index);
+        assert(index == req_msg.index());
 
-        ret = p->Step(req_index, req_msg, callback);
+        ret = p->Step(req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
 
         uint64_t commited_index = p->GetCommitedIndex();
@@ -137,25 +127,22 @@ TEST_F(PaxosTest, SimpleImplPropose)
 
     // q: recv chosen req 
     {
-        uint64_t req_index = 0;
-        Message req_msg;
-        tie(req_index, req_msg) = vecMsg.back();
+        Message req_msg = vecMsg.back();
         vecMsg.clear();
         assert(MessageType::CHOSEN == req_msg.type());
-        assert(index == req_index);
+        assert(index == req_msg.index());
         assert(0 == req_msg.to_id());
 
         req_msg.set_to_id(q->GetSelfId());
         assert(0 != req_msg.to_id());
 
-        ret = q->Step(req_index, req_msg, callback);
+        ret = q->Step(req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
 
         assert(true == vecMsg.empty());
         uint64_t commited_index = q->GetCommitedIndex();
         assert(commited_index == index);
     }
-
 }
 
 

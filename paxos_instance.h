@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string>
 #include <map>
+#include <chrono>
 #include "utils.h"
 #include "paxos.pb.h"
 #include "gsl.h"
@@ -81,6 +82,10 @@ private:
     std::string accepted_value_;
 
     uint64_t active_proposer_tick_ = 0;
+    std::chrono::time_point<
+        std::chrono::system_clock> active_proposer_time_; // TODO
+
+    std::chrono::milliseconds ACTIVE_TIME_OUT = std::chrono::milliseconds{100};
 };
 
 
