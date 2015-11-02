@@ -25,23 +25,6 @@ std::unique_ptr<PaxosInstance> buildPaxosInstance(
     return new_ins;
 }
 
-std::unique_ptr<HardState> 
-createHardState(uint64_t index, const PaxosInstance* ins)
-{
-    assert(0 < index);
-    assert(nullptr != ins);
-    auto hs = unique_ptr<HardState>{new HardState{}};
-    assert(nullptr != hs);
-
-    hs->set_index(index);
-    hs->set_proposed_num(ins->GetProposeNum());
-    hs->set_promised_num(ins->GetPromisedNum());
-    hs->set_accepted_num(ins->GetAcceptedNum());
-    hs->set_accepted_value(ins->GetAcceptedValue());
-    return hs;
-}
-
-
 } // namespace
 
 
@@ -110,6 +93,11 @@ PaxosInstance* PaxosImpl::GetInstance(uint64_t index, bool create)
     if (ins_map_.end() == ins_map_.find(index)) {
         if (false == create) {
             return nullptr;
+        }
+
+        assert(true == create);
+        if (index <= commited_index_) {
+            return nullptr; // don't re-create
         }
 
         // need build a new paxos instance

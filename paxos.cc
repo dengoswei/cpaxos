@@ -100,12 +100,13 @@ Paxos::Step(const Message& msg, Callback callback)
     {
         lock_guard<mutex> lock(paxos_mutex_);
         prev_commit_index = paxos_impl_->GetCommitedIndex();
-        if (paxos_impl_->IsChosen(index)) {
-            return 1;
-        }
 
         PaxosInstance* ins = paxos_impl_->GetInstance(index, true);
         if (nullptr == ins) {
+            if (paxos_impl_->IsChosen(index)) {
+                return 1;
+            }
+
             return -1;
         }
 
