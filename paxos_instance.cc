@@ -147,7 +147,7 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             assert(PropState::WAIT_PREPARE == prop_state_);
         }
         break;
-    case MessageType::TRY_REDO_PROP:
+    case MessageType::TRY_PROP:
         {
             // TODO
             if (ACTIVE_TIME_OUT > 

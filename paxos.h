@@ -29,7 +29,7 @@ public:
 
     uint64_t Propose(gsl::cstring_view<> proposing_value, Callback callback);
 
-    int TryActivePropose(uint64_t index, Callback callback);
+    int TryPropose(uint64_t index, Callback callback);
 
     int Step(const Message& msg, Callback callback);
 

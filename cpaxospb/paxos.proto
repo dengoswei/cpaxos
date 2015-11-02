@@ -57,7 +57,7 @@ enum MessageType {
 
     CATCHUP = 10;
     BEGIN_PROP = 11;
-    TRY_REDO_PROP = 12;
+    TRY_PROP = 12;
 
     ERROR = -1;
 };

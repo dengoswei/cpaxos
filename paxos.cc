@@ -61,11 +61,11 @@ Paxos::Propose(gsl::cstring_view<> proposing_value, Callback callback)
     return msg.index();
 }
 
-int Paxos::TryActivePropose(uint64_t index, Callback callback)
+int Paxos::TryPropose(uint64_t index, Callback callback)
 {
     assert(0 < index);
     Message msg;
-    msg.set_type(MessageType::TRY_REDO_PROP);
+    msg.set_type(MessageType::TRY_PROP);
     msg.set_index(index);
     {
         lock_guard<mutex> lock(paxos_mutex_);
