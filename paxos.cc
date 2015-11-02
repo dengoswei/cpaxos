@@ -40,7 +40,7 @@ Paxos::Paxos(uint64_t selfid, uint64_t group_size)
 Paxos::~Paxos() = default;
 
 
-uint64_t
+std::tuple<int, uint64_t>
 Paxos::Propose(gsl::cstring_view<> proposing_value, Callback callback)
 {
     Message msg;
@@ -49,16 +49,23 @@ Paxos::Propose(gsl::cstring_view<> proposing_value, Callback callback)
             string{proposing_value.data(), proposing_value.size()});
     {
         lock_guard<mutex> lock(paxos_mutex_);
-        msg.set_index(paxos_impl_->NextProposingIndex()); 
+        auto new_index = paxos_impl_->NextProposingIndex();
+        if (0 == new_index) {
+            return make_tuple(-1, 0ull);
+        }
+
+        msg.set_index(new_index);
         msg.set_to_id(paxos_impl_->GetSelfId());
     }
 
+    assert(0 < msg.index());
     int ret = Step(msg, callback);
     if (0 != ret) {
         logerr("Step ret %d", ret);
+        // TODO ?
     }
 
-    return msg.index();
+    return make_tuple(0, msg.index());
 }
 
 int Paxos::TryPropose(uint64_t index, Callback callback)
@@ -96,6 +103,9 @@ Paxos::Step(const Message& msg, Callback callback)
     unique_ptr<Message> rsp_msg;
 
     uint64_t index = msg.index();
+    hassert(0 < index, "index %" PRIu64 " type %d peer %" PRIu64 " to %" PRIu64, 
+            msg.index(), static_cast<int>(msg.type()), 
+            msg.peer_id(), msg.to_id());
     assert(0 < index);
     {
         lock_guard<mutex> lock(paxos_mutex_);

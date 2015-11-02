@@ -27,7 +27,8 @@ public:
     // over-come std::unque_ptr uncomplete type;
     ~Paxos();
 
-    uint64_t Propose(gsl::cstring_view<> proposing_value, Callback callback);
+    std::tuple<int, uint64_t>
+    Propose(gsl::cstring_view<> proposing_value, Callback callback);
 
     int TryPropose(uint64_t index, Callback callback);
 

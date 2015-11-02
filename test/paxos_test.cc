@@ -69,7 +69,9 @@ TEST_F(PaxosTest, SimpleImplPropose)
         return 0;
     };
 
-    uint64_t index = p->Propose(proposing_value, callback);
+    uint64_t index = 0;
+    tie(ret, index) = p->Propose(proposing_value, callback);
+    assert(0 == ret);
     assert(0 < index);
 
     // q: recv prop req, produce prop_rsp 
