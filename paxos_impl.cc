@@ -10,6 +10,8 @@ namespace {
 
 using namespace paxos;
 
+const size_t MAX_INS_SIZE = 100; // TODO: config option ?
+
 std::unique_ptr<PaxosInstance> buildPaxosInstance(
         size_t group_size, uint64_t selfid, uint64_t prop_cnt)
 {
@@ -92,6 +94,14 @@ void PaxosImpl::CommitStep(uint64_t index, uint64_t store_seq)
         if (store_seq == pending_index_[index]) {
             pending_index_.erase(index);
         }
+    }
+
+    if (ins_map_.size() >= MAX_INS_SIZE && 
+            index < commited_index_ &&
+            pending_index_.end() == pending_index_.find(index)) {
+        // gc paxos instance: only commited & non-pending one
+        ins_map_.erase(index);
+        logdebug("GC paxos instance index %" PRIu64, index);
     }
 }
 

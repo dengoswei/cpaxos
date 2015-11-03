@@ -142,11 +142,8 @@ int Paxos::Step(const Message& msg, CallBackType callback)
 
         PaxosInstance* ins = paxos_impl_->GetInstance(index, true);
         if (nullptr == ins) {
-            if (paxos_impl_->IsChosen(index)) {
-                return 1;
-            }
-
-            return -1;
+            assert(true == paxos_impl_->IsChosen(index));
+            return 1; // read out of storage!
         }
 
         auto rsp_msg_type = ins->Step(msg);
