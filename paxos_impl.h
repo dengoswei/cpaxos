@@ -34,22 +34,11 @@ public:
 
     uint64_t NextProposingIndex();
     std::unique_ptr<PaxosInstance> BuildNewPaxosInstance();
-//    void DiscardProposingInstance(
-//            uint64_t index, 
-//            std::unique_ptr<PaxosInstance> proposing_ins);
-//    void CommitProposingInstance(
-//            uint64_t index, uint64_t store_seq, 
-//            std::unique_ptr<PaxosInstance>&& proposing_ins);
 
     bool IsChosen(uint64_t index) {
         assert(0 < index);
         return index <= commited_index_;
     }
-
-//    bool IsProposing(uint64_t index) {
-//        assert(0 < index);
-//        return index == proposing_index_;
-//    }
 
     // may craete a new instance
     PaxosInstance* GetInstance(uint64_t index, bool create);

@@ -38,8 +38,8 @@ TEST_F(PaxosTest, SimpleImplPropose)
     int ret = 0;
     vector<Message> vecMsg;
     auto callback = [&](
-            const unique_ptr<HardState>& hs, 
-            const unique_ptr<Message>& rsp_msg) {
+            unique_ptr<HardState> hs, 
+            unique_ptr<Message> rsp_msg) {
 
         // fake => store nothing
         if (nullptr != hs) {

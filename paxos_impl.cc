@@ -55,38 +55,6 @@ PaxosImpl::BuildNewPaxosInstance()
     return buildPaxosInstance(group_size_, selfid_, 0);
 }
 
-//void PaxosImpl::DiscardProposingInstance(
-//        const uint64_t index, 
-//        std::unique_ptr<PaxosInstance> proposing_ins)
-//{
-//    assert(0 != proposing_ins);
-//    assert(nullptr != proposing_ins);
-//    assert(ins_map_.end() == ins_map_.find(index));
-//
-//    pending_index_.erase(index);
-//}
-
-//void PaxosImpl::CommitProposingInstance(
-//        const uint64_t index, 
-//        const uint64_t store_seq, 
-//        std::unique_ptr<PaxosInstance>&& proposing_ins)
-//{
-//    assert(nullptr != proposing_ins);
-//    assert(ins_map_.end() == ins_map_.find(index));
-//    assert(0 != store_seq);
-//
-//    ins_map_[index] = move(proposing_ins);
-//    assert(nullptr == proposing_ins);
-//    max_index_ = max(max_index_, index);
-//
-//    if (pending_index_.end() != pending_index_.find(index)) {
-//        assert(0 != pending_index_[index]);
-//        if (store_seq == pending_index_[index]) {
-//            pending_index_.erase(index);
-//        }
-//    }
-//}
-
 PaxosInstance* PaxosImpl::GetInstance(uint64_t index, bool create)
 {
     assert(0 < index);
