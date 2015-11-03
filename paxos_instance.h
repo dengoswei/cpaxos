@@ -40,7 +40,6 @@ public:
     const std::string& getAcceptedValue() const { return accepted_value_; }
 
     // proposer
-    // int beginPropose(const gsl::cstring_view<>& proposing_value);
     PropState beginPreparePhase();
     PropState beginAcceptPhase();
 
@@ -81,11 +80,8 @@ private:
     uint64_t accepted_num_ = 0;
     std::string accepted_value_;
 
-    uint64_t active_proposer_tick_ = 0;
     std::chrono::time_point<
-        std::chrono::system_clock> active_proposer_time_; // TODO
-
-    std::chrono::milliseconds ACTIVE_TIME_OUT = std::chrono::milliseconds{100};
+        std::chrono::system_clock> active_proposer_time_; 
 };
 
 
@@ -97,8 +93,6 @@ public:
     // NOTICE:
     // over-come std::unque_ptr uncomplete type;
     ~PaxosInstance();
-
-    // int Propose(const gsl::cstring_view<>& proposing_value);
 
     MessageType Step(const Message& msg);
 
