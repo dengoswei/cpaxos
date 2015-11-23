@@ -45,6 +45,8 @@ public:
 
     int Step(const Message& msg);
 
+    std::tuple<int, std::unique_ptr<HardState>> Get(uint64_t index);
+
     void Wait(uint64_t index);
 
     uint64_t GetMaxIndex();

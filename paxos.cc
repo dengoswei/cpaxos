@@ -167,6 +167,28 @@ int Paxos::Step(const Message& msg)
     return 0;
 }
 
+std::tuple<int, std::unique_ptr<HardState>> Paxos::Get(uint64_t index)
+{
+    assert(0 < index);
+    {
+        std::lock_guard<std::mutex> lock(paxos_mutex_);
+        if (index > paxos_impl_->GetMaxIndex()) {
+            return make_tuple(-1, nullptr);
+        }
+
+        if (index > paxos_impl_->GetCommitedIndex()) {
+            return make_tuple(1, nullptr);
+        }
+    }
+
+    auto chosen_hs = callback_.read(index);
+    if (nullptr == chosen_hs) {
+        return make_tuple(-2, nullptr);    
+    }
+
+    return make_tuple(0, move(chosen_hs));
+}
+
 void
 Paxos::Wait(uint64_t index)
 {

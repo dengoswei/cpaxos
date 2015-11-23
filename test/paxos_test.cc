@@ -22,7 +22,7 @@ protected:
                 return nullptr;
             };
 
-            callback.write = [&](const HardState& hs) -> int {
+            callback.write = [](const HardState& hs) -> int {
                 logdebug("hs[index %" PRIu64 ", "
                          "proposed_num %" PRIu64 ", promised_num %" PRIu64
                          ", accepted_num %" PRIu64 ", accepted_value %s]", 
@@ -74,37 +74,6 @@ TEST_F(PaxosTest, SimpleImplPropose)
 
     int ret = 0;
     vector<Message>& vecMsg = paxos_rsp_msg_;
-//    auto callback = [&](
-//            unique_ptr<HardState> hs, 
-//            unique_ptr<Message> rsp_msg) {
-//
-//        // fake => store nothing
-//        if (nullptr != hs) {
-//            logdebug("hs[index %" PRIu64 ", "
-//                     "proposed_num %" PRIu64 ", promised_num %" PRIu64
-//                     ", accepted_num %" PRIu64 ", accepted_value %s]", 
-//                     hs->index(), hs->proposed_num(), 
-//                     hs->promised_num(), hs->accepted_num(), 
-//                     hs->accepted_value().c_str());
-//        }
-//
-//        // fake => rsp nothing
-//        if (nullptr != rsp_msg) {
-//            logdebug("rsp_msg[type %d, index %" PRIu64 " " 
-//                     "prop_num %" PRIu64 ", peer_id %d "
-//                     "promised_num %" PRIu64 ", "
-//                     "accepted_num %" PRIu64 "accepted_value %s]", 
-//                     static_cast<int>(rsp_msg->type()), rsp_msg->index(), 
-//                     rsp_msg->proposed_num(), static_cast<int>(rsp_msg->peer_id()), 
-//                     rsp_msg->promised_num(), rsp_msg->accepted_num(), 
-//                     rsp_msg->accepted_value().c_str());
-//
-//            Message msg = *rsp_msg;
-//            vecMsg.emplace_back(move(msg));
-//        }
-//
-//        return 0;
-//    };
 
     uint64_t index = 0;
     tie(ret, index) = p->Propose(index, proposing_value);
