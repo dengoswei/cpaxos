@@ -18,7 +18,7 @@ GTEST_HEADERS = $(GTEST_DIR)/include/gtest/*.h \
 CPPCOMPILE = $(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(INCLS) -c -o $@
 BUILDEXE = $(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ $^ $(LINKS)
 
-PROTOS_PATH = cpaxospb
+PROTOS_PATH = ../cpaxospb
 PROTOC = /Users/dengoswei/project/bin/protoc
 GRPC_CPP_PLUGIN = grpc_cpp_plugin
 GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`

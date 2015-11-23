@@ -27,6 +27,13 @@ class PaxosInstanceImpl {
 
 public:
     PaxosInstanceImpl(int major_cnt, uint64_t prop_num);
+    PaxosInstanceImpl(
+            int major_cnt, 
+            uint64_t prop_num, 
+            uint64_t promised_num, 
+            uint64_t accepted_num, 
+            const std::string& accepted_value, 
+            PropState prop_state);
 
     MessageType step(const Message& msg);
 
@@ -89,6 +96,14 @@ class PaxosInstance {
 
 public: 
     PaxosInstance(int major_cnt, uint64_t prop_num);
+
+    PaxosInstance(
+            int major_cnt, 
+            uint64_t proposed_num, 
+            uint64_t promised_num, 
+            uint64_t accepted_num, 
+            const std::string& accepted_value, 
+            PropState prop_state);
 
     // NOTICE:
     // over-come std::unque_ptr uncomplete type;

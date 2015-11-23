@@ -34,121 +34,138 @@ Paxos::Paxos(uint64_t selfid, uint64_t group_size)
 
 }
 
+Paxos::Paxos(uint64_t selfid, uint64_t group_size, PaxosCallBack callback)
+    : paxos_impl_{new PaxosImpl(selfid, group_size)}
+    , callback_(callback)
+{
+    assert(nullptr != callback_.read);
+    assert(nullptr != callback_.write);
+    assert(nullptr != callback_.send);
+}
+
+
 Paxos::~Paxos() = default;
 
+// TODO: FIX ERROR CODE
+std::tuple<int, uint64_t>
+Paxos::Propose(uint64_t index, gsl::cstring_view<> proposing_value)
+{
+    Message msg;
+    msg.set_type(MessageType::BEGIN_PROP);
+    msg.set_accepted_value(
+            std::string{proposing_value.data(), proposing_value.size()});
 
-//std::tuple<int, uint64_t>
-//Paxos::Propose(gsl::cstring_view<> proposing_value, Callback callback)
-//{
-//    Message msg;
-//    msg.set_type(MessageType::BEGIN_PROP);
-//    msg.set_accepted_value(
-//            string{proposing_value.data(), proposing_value.size()});
-//    {
-//        lock_guard<mutex> lock(paxos_mutex_);
-//        auto new_index = paxos_impl_->NextProposingIndex();
-//        if (0 == new_index) {
-//            return make_tuple(-1, 0ull);
-//        }
-//
-//        msg.set_index(new_index);
-//        msg.set_to_id(paxos_impl_->GetSelfId());
-//    }
-//
-//    assert(0 < msg.index());
-//    int ret = Step(msg, callback);
-//    if (0 != ret) {
-//        logerr("Step ret %d", ret);
-//        // TODO ?
-//    }
-//
-//    return make_tuple(0, msg.index());
-//}
-//
-//int Paxos::TryPropose(uint64_t index, Callback callback)
-//{
-//    assert(0 < index);
-//    Message msg;
-//    msg.set_type(MessageType::TRY_PROP);
-//    msg.set_index(index);
-//    {
-//        lock_guard<mutex> lock(paxos_mutex_);
-//        if (paxos_impl_->GetMaxIndex() < index) {
-//            logerr("selfid %" PRIu64 " max index %" PRIu64 " index %" PRIu64, 
-//                    paxos_impl_->GetSelfId(), paxos_impl_->GetMaxIndex(), index);
-//            return -1;
-//        }
-//
-//        msg.set_to_id(paxos_impl_->GetSelfId());
-//    }
-//
-//    int ret = Step(msg, callback);
-//    if (0 != ret) {
-//        logerr("Step ret %d", ret);
-//    }
-//
-//    return 0;
-//}
-//
-//int 
-//Paxos::Step(const Message& msg, Callback callback)
-//{
-//    bool update = false;
-//    uint64_t prev_commit_index = 0;
-//    uint64_t store_seq = 0;
-//    unique_ptr<HardState> hs;
-//    unique_ptr<Message> rsp_msg;
-//
-//    uint64_t index = msg.index();
-//    hassert(0 < index, "index %" PRIu64 " type %d peer %" PRIu64 " to %" PRIu64, 
-//            msg.index(), static_cast<int>(msg.type()), 
-//            msg.peer_id(), msg.to_id());
-//    assert(0 < index);
-//    {
-//        lock_guard<mutex> lock(paxos_mutex_);
-//        prev_commit_index = paxos_impl_->GetCommitedIndex();
-//
-//        PaxosInstance* ins = paxos_impl_->GetInstance(index, true);
-//        if (nullptr == ins) {
-//            if (paxos_impl_->IsChosen(index)) {
-//                return 1;
-//            }
-//
-//            return -1;
-//        }
-//
-//        auto rsp_msg_type = ins->Step(msg);
-//        tie(store_seq, rsp_msg) = 
-//            paxos_impl_->ProduceRsp(ins, msg, rsp_msg_type);
-//        if (0 != store_seq) {
-//            hs = CreateHardState(index, ins);
-//            assert(nullptr != hs);
-//        }
-//    }
-//
-//    int ret = callback(move(hs), move(rsp_msg));
-//    assert(nullptr == hs);
-//    assert(nullptr == rsp_msg);
-//    {
-//        lock_guard<mutex> lock(paxos_mutex_);
-//        if (0 != ret) {
-//            return ret;
-//        }
-//
-//        assert(0 == ret);
-//        paxos_impl_->CommitStep(index, store_seq);
-//        if (prev_commit_index < paxos_impl_->GetCommitedIndex()) {
-//            update = true;
-//        }
-//        logdebug("selfid %" PRIu64 " commited_index_ %" PRIu64 "\n", 
-//               paxos_impl_->GetSelfId(), paxos_impl_->GetCommitedIndex());
-//    }
-//
-//    if (update) {
-//        paxos_cv_.notify_all();
-//    }
-//    return 0;
-//}
+    uint64_t proposing_index = 0;
+    {
+        std::lock_guard<std::mutex> lock(paxos_mutex_);
+        if (0 == index) {
+            // assign new index
+            proposing_index = paxos_impl_->NextProposingIndex();        
+            if (0 == proposing_index) {
+                return std::make_tuple(-1, 0ull);
+            }
+        }
+        else {
+            if (index <= paxos_impl_->GetCommitedIndex()
+                    || index > paxos_impl_->GetMaxIndex()) {
+                return std::make_tuple(-2, 0ull);
+            }
+        }
+
+        msg.set_index(proposing_index);
+        msg.set_to_id(paxos_impl_->GetSelfId());
+    }
+
+    assert(0 < msg.index());
+    int ret = Step(msg);
+    if (0 != ret) {
+        logerr("Step ret %d", ret);
+        return std::make_tuple(-3, 0ull);
+    }
+
+    return std::make_tuple(0, msg.index());
+}
+
+int Paxos::Step(const Message& msg)
+{
+    bool update = false;
+    uint64_t prev_commit_index = 0;
+    uint64_t store_seq = 0;
+    std::unique_ptr<HardState> hs;
+    std::unique_ptr<Message> rsp_msg;
+
+    // TODO: chosen_ins cache
+    std::unique_ptr<PaxosInstance> chosen_ins;
+
+    uint64_t index = msg.index();
+    hassert(0 < index, "index %" PRIu64 " type %d peer %" 
+            PRIu64 " to %" PRIu64, 
+            msg.index(), static_cast<int>(msg.type()), 
+            msg.peer_id(), msg.to_id());
+    assert(0 < index);
+    {
+        std::lock_guard<std::mutex> lock(paxos_mutex_);
+        prev_commit_index = paxos_impl_->GetCommitedIndex();
+
+        PaxosInstance* ins = paxos_impl_->GetInstance(index, true);
+        if (nullptr == ins) {
+            assert(true == paxos_impl_->IsChosen(index));
+             
+            // construct a chosen paxos instance
+            auto chosen_hs = callback_.read(index);
+            if (nullptr == chosen_hs) {
+                logerr("callback_.read index %" PRIu64 " nullptr", index);
+                return -1;
+            }
+
+            assert(index == chosen_hs->index());
+            chosen_ins = paxos_impl_->BuildPaxosInstance(*chosen_hs, PropState::CHOSEN);
+            assert(nullptr != chosen_ins);
+
+            ins = chosen_ins.get();
+            assert(static_cast<int>(PropState::CHOSEN) == ins->GetState());
+        }
+
+        auto rsp_msg_type = ins->Step(msg);
+        std::tie(store_seq, rsp_msg) = 
+            paxos_impl_->ProduceRsp(ins, msg, rsp_msg_type);
+        if (0 != store_seq) {
+            hs = CreateHardState(index, ins);
+            assert(nullptr != hs);
+        }
+    }
+
+    int ret = 0;
+    if (nullptr != hs) {
+        ret = callback_.write(*hs); 
+        if (0 != ret) {
+            return ret;
+        }
+    }
+
+    assert(0 == ret);
+    if (nullptr != rsp_msg) {
+        ret = callback_.send(*rsp_msg);
+        if (0 != ret) {
+            logdebug("callback_.send ret %d", ret);
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(paxos_mutex_);
+        paxos_impl_->CommitStep(index, store_seq);
+        if (prev_commit_index < paxos_impl_->GetCommitedIndex()) {
+            update = true;
+        }
+        logdebug("selfid %" PRIu64 " commited_index_ %" PRIu64 "\n", 
+               paxos_impl_->GetSelfId(), paxos_impl_->GetCommitedIndex());
+    }
+
+    if (update) {
+        paxos_cv_.notify_all();
+    }
+    return 0;
+}
 
 void
 Paxos::Wait(uint64_t index)

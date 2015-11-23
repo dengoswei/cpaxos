@@ -16,6 +16,8 @@ namespace paxos {
 class Message;
 class PaxosInstance;
 
+enum class PropState : uint8_t;
+
 // NOT thread safe;
 class PaxosImpl {
 
@@ -34,6 +36,8 @@ public:
 
     uint64_t NextProposingIndex();
     std::unique_ptr<PaxosInstance> BuildNewPaxosInstance();
+    std::unique_ptr<PaxosInstance> 
+        BuildPaxosInstance(const HardState& hs, PropState prop_state);
 
     bool IsChosen(uint64_t index) {
         assert(0 < index);

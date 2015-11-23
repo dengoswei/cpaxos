@@ -57,6 +57,18 @@ PaxosImpl::BuildNewPaxosInstance()
     return buildPaxosInstance(group_size_, selfid_, 0);
 }
 
+std::unique_ptr<PaxosInstance>
+PaxosImpl::BuildPaxosInstance(const HardState& hs, PropState prop_state)
+{
+    const int major_cnt = static_cast<int>(group_size_) / 2 + 1;
+    auto new_ins = unique_ptr<PaxosInstance>{
+        new PaxosInstance{
+            major_cnt, hs.proposed_num(), hs.promised_num(), 
+            hs.accepted_num(), hs.accepted_value(), prop_state}};
+    assert(nullptr != new_ins);
+    return new_ins;
+}
+
 PaxosInstance* PaxosImpl::GetInstance(uint64_t index, bool create)
 {
     assert(0 < index);

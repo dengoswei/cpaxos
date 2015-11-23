@@ -51,6 +51,24 @@ PaxosInstanceImpl::PaxosInstanceImpl(int major_cnt, uint64_t prop_num)
 
 }
 
+PaxosInstanceImpl::PaxosInstanceImpl(
+        int major_cnt, 
+        uint64_t prop_num, 
+        uint64_t promised_num, 
+        uint64_t accepted_num, 
+        const std::string& accepted_value, 
+        PropState prop_state)
+    : major_cnt_(major_cnt)
+    , prop_num_gen_(prop_num)
+    , prop_state_(prop_state)
+    , promised_num_(promised_num)
+    , accepted_num_(accepted_num)
+    , accepted_value_(accepted_value)
+    , active_proposer_time_(chrono::system_clock::now())
+{
+
+}
+
 
 MessageType PaxosInstanceImpl::step(const Message& msg)
 {
@@ -376,6 +394,19 @@ bool PaxosInstanceImpl::updateAccepted(
 
 PaxosInstance::PaxosInstance(int major_cnt, uint64_t prop_num)
     : ins_impl_(major_cnt, prop_num)
+{
+
+}
+
+PaxosInstance::PaxosInstance(
+        int major_cnt, 
+        uint64_t proposed_num, 
+        uint64_t promised_num, 
+        uint64_t accepted_num, 
+        const std::string& accepted_value, 
+        PropState prop_state)
+    : ins_impl_(major_cnt, proposed_num, 
+            promised_num, accepted_num, accepted_value, prop_state)
 {
 
 }

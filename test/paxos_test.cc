@@ -16,12 +16,49 @@ protected:
     {
         for (uint64_t id = 1; id <= 3; ++id)
         {
-            paxos_map_.emplace(id, unique_ptr<Paxos>{new Paxos{id, 3}});
+            PaxosCallBack callback;
+            callback.read = [](uint64_t /* index */) -> std::unique_ptr<HardState> {
+
+                return nullptr;
+            };
+
+            callback.write = [&](const HardState& hs) -> int {
+                logdebug("hs[index %" PRIu64 ", "
+                         "proposed_num %" PRIu64 ", promised_num %" PRIu64
+                         ", accepted_num %" PRIu64 ", accepted_value %s]", 
+                         hs.index(), hs.proposed_num(), 
+                         hs.promised_num(), hs.accepted_num(), 
+                         hs.accepted_value().c_str());
+
+                return 0;
+            };
+
+            std::vector<Message>& vecMsg = paxos_rsp_msg_;
+            callback.send = [&](const Message& rsp_msg) -> int {
+                // fake => rsp nothing
+                logdebug("rsp_msg[type %d, index %" PRIu64 " " 
+                         "prop_num %" PRIu64 ", peer_id %d "
+                         "promised_num %" PRIu64 ", "
+                         "accepted_num %" PRIu64 "accepted_value %s]", 
+                         static_cast<int>(rsp_msg.type()), rsp_msg.index(), 
+                         rsp_msg.proposed_num(), static_cast<int>(rsp_msg.peer_id()), 
+                         rsp_msg.promised_num(), rsp_msg.accepted_num(), 
+                         rsp_msg.accepted_value().c_str());
+
+                // Message msg = *rsp_msg;
+                vecMsg.emplace_back(rsp_msg);
+                // vecMsg.emplace_back(move(msg));
+
+                return 0;
+            };
+
+            paxos_map_.emplace(id, unique_ptr<Paxos>{new Paxos{id, 3, callback}});
         }
     }
 
 protected:
     std::map<uint64_t, std::unique_ptr<Paxos>> paxos_map_;
+    std::vector<Message> paxos_rsp_msg_;
     RandomStrGen<10, 40> str_gen_;
 };
 
@@ -36,41 +73,41 @@ TEST_F(PaxosTest, SimpleImplPropose)
     assert(nullptr != q);
 
     int ret = 0;
-    vector<Message> vecMsg;
-    auto callback = [&](
-            unique_ptr<HardState> hs, 
-            unique_ptr<Message> rsp_msg) {
-
-        // fake => store nothing
-        if (nullptr != hs) {
-            logdebug("hs[index %" PRIu64 ", "
-                     "proposed_num %" PRIu64 ", promised_num %" PRIu64
-                     ", accepted_num %" PRIu64 ", accepted_value %s]", 
-                     hs->index(), hs->proposed_num(), 
-                     hs->promised_num(), hs->accepted_num(), 
-                     hs->accepted_value().c_str());
-        }
-
-        // fake => rsp nothing
-        if (nullptr != rsp_msg) {
-            logdebug("rsp_msg[type %d, index %" PRIu64 " " 
-                     "prop_num %" PRIu64 ", peer_id %d "
-                     "promised_num %" PRIu64 ", "
-                     "accepted_num %" PRIu64 "accepted_value %s]", 
-                     static_cast<int>(rsp_msg->type()), rsp_msg->index(), 
-                     rsp_msg->proposed_num(), static_cast<int>(rsp_msg->peer_id()), 
-                     rsp_msg->promised_num(), rsp_msg->accepted_num(), 
-                     rsp_msg->accepted_value().c_str());
-
-            Message msg = *rsp_msg;
-            vecMsg.emplace_back(move(msg));
-        }
-
-        return 0;
-    };
+    vector<Message>& vecMsg = paxos_rsp_msg_;
+//    auto callback = [&](
+//            unique_ptr<HardState> hs, 
+//            unique_ptr<Message> rsp_msg) {
+//
+//        // fake => store nothing
+//        if (nullptr != hs) {
+//            logdebug("hs[index %" PRIu64 ", "
+//                     "proposed_num %" PRIu64 ", promised_num %" PRIu64
+//                     ", accepted_num %" PRIu64 ", accepted_value %s]", 
+//                     hs->index(), hs->proposed_num(), 
+//                     hs->promised_num(), hs->accepted_num(), 
+//                     hs->accepted_value().c_str());
+//        }
+//
+//        // fake => rsp nothing
+//        if (nullptr != rsp_msg) {
+//            logdebug("rsp_msg[type %d, index %" PRIu64 " " 
+//                     "prop_num %" PRIu64 ", peer_id %d "
+//                     "promised_num %" PRIu64 ", "
+//                     "accepted_num %" PRIu64 "accepted_value %s]", 
+//                     static_cast<int>(rsp_msg->type()), rsp_msg->index(), 
+//                     rsp_msg->proposed_num(), static_cast<int>(rsp_msg->peer_id()), 
+//                     rsp_msg->promised_num(), rsp_msg->accepted_num(), 
+//                     rsp_msg->accepted_value().c_str());
+//
+//            Message msg = *rsp_msg;
+//            vecMsg.emplace_back(move(msg));
+//        }
+//
+//        return 0;
+//    };
 
     uint64_t index = 0;
-    tie(ret, index) = p->Propose(proposing_value, callback);
+    tie(ret, index) = p->Propose(index, proposing_value);
     assert(0 == ret);
     assert(0 < index);
 
@@ -84,7 +121,8 @@ TEST_F(PaxosTest, SimpleImplPropose)
 
         req_msg.set_to_id(q->GetSelfId());
         assert(0 != req_msg.to_id());
-        ret = q->Step(req_msg, callback);
+        ret = q->Step(req_msg);
+        // ret = q->Step(req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
     }
 
@@ -95,7 +133,8 @@ TEST_F(PaxosTest, SimpleImplPropose)
         assert(MessageType::PROP_RSP == req_msg.type());
         assert(index == req_msg.index());
 
-        ret = p->Step(req_msg, callback);
+        ret = p->Step(req_msg);
+        // ret = p->Step(req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
     }
 
@@ -109,7 +148,9 @@ TEST_F(PaxosTest, SimpleImplPropose)
 
         req_msg.set_to_id(q->GetSelfId());
         assert(0 != req_msg.to_id());
-        ret = q->Step(req_msg, callback);
+
+        ret = q->Step(req_msg);
+        // ret = q->Step(req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
     }
 
@@ -120,7 +161,8 @@ TEST_F(PaxosTest, SimpleImplPropose)
         assert(MessageType::ACCPT_RSP == req_msg.type());
         assert(index == req_msg.index());
 
-        ret = p->Step(req_msg, callback);
+        ret = p->Step(req_msg);
+        // ret = p->Step(req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
 
         uint64_t commited_index = p->GetCommitedIndex();
@@ -138,7 +180,8 @@ TEST_F(PaxosTest, SimpleImplPropose)
         req_msg.set_to_id(q->GetSelfId());
         assert(0 != req_msg.to_id());
 
-        ret = q->Step(req_msg, callback);
+        ret = q->Step(req_msg);
+        // ret = q->Step(req_msg, callback);
         hassert(0 == ret, "Paxos::Step ret %d", ret);
 
         assert(true == vecMsg.empty());
