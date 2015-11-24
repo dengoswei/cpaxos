@@ -76,7 +76,7 @@ TEST_F(PaxosTest, SimpleImplPropose)
     vector<Message>& vecMsg = paxos_rsp_msg_;
 
     uint64_t index = 0;
-    tie(ret, index) = p->Propose(index, proposing_value);
+    tie(ret, index) = p->Propose(index, proposing_value, true);
     assert(0 == ret);
     assert(0 < index);
 

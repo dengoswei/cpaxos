@@ -48,7 +48,8 @@ Paxos::~Paxos() = default;
 
 // TODO: FIX ERROR CODE
 std::tuple<int, uint64_t>
-Paxos::Propose(uint64_t index, gsl::cstring_view<> proposing_value)
+Paxos::Propose(const uint64_t index, 
+        gsl::cstring_view<> proposing_value, bool exclude)
 {
     Message msg;
     msg.set_type(MessageType::BEGIN_PROP);
@@ -70,6 +71,16 @@ Paxos::Propose(uint64_t index, gsl::cstring_view<> proposing_value)
                     || index > paxos_impl_->GetMaxIndex()) {
                 return std::make_tuple(-2, 0ull);
             }
+
+            proposing_index = index;
+        }
+
+        assert(0 == index || index == proposing_index);
+        if (true == exclude) {
+            auto ins = paxos_impl_->GetInstance(proposing_index, false);
+            if (nullptr != ins) {
+                return std::make_tuple(-3, 0ull);
+            }
         }
 
         msg.set_index(proposing_index);
@@ -80,7 +91,7 @@ Paxos::Propose(uint64_t index, gsl::cstring_view<> proposing_value)
     int ret = Step(msg);
     if (0 != ret) {
         logerr("Step ret %d", ret);
-        return std::make_tuple(-3, 0ull);
+        return std::make_tuple(-4, 0ull);
     }
 
     return std::make_tuple(0, msg.index());
@@ -167,26 +178,37 @@ int Paxos::Step(const Message& msg)
     return 0;
 }
 
-std::tuple<int, std::unique_ptr<HardState>> Paxos::Get(uint64_t index)
+std::tuple<
+int, uint64_t, std::unique_ptr<HardState>> Paxos::Get(uint64_t index)
 {
     assert(0 < index);
+    uint64_t commited_index = 0;
     {
         std::lock_guard<std::mutex> lock(paxos_mutex_);
-        if (index > paxos_impl_->GetMaxIndex()) {
-            return make_tuple(-1, nullptr);
+        commited_index = paxos_impl_->GetCommitedIndex();
+        if (0 != commited_index && 
+                index > paxos_impl_->GetMaxIndex()) {
+            return make_tuple(-1, 0ull, nullptr);
         }
 
-        if (index > paxos_impl_->GetCommitedIndex()) {
-            return make_tuple(1, nullptr);
+        if (index > commited_index) {
+            return make_tuple(1, commited_index, nullptr);
         }
     }
 
     auto chosen_hs = callback_.read(index);
     if (nullptr == chosen_hs) {
-        return make_tuple(-2, nullptr);    
+        return make_tuple(-2, 0ull, nullptr);    
     }
 
-    return make_tuple(0, move(chosen_hs));
+    return make_tuple(0, commited_index, move(chosen_hs));
+}
+
+std::tuple<int, uint64_t> 
+Paxos::TrySet(uint64_t index, gsl::cstring_view<> proposing_value)
+{
+    // set exclude == true;
+    return Propose(index, proposing_value, true);    
 }
 
 void

@@ -41,11 +41,14 @@ public:
     ~Paxos();
 
     std::tuple<int, uint64_t>
-        Propose(uint64_t index, gsl::cstring_view<> proposing_value);
+        Propose(uint64_t index, 
+                gsl::cstring_view<> proposing_value, bool exclude);
 
     int Step(const Message& msg);
 
-    std::tuple<int, std::unique_ptr<HardState>> Get(uint64_t index);
+    std::tuple<int, uint64_t, std::unique_ptr<HardState>> Get(uint64_t index);
+    std::tuple<int, uint64_t> TrySet(
+            uint64_t index, gsl::cstring_view<> proposing_value);
 
     void Wait(uint64_t index);
 
