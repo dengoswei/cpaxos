@@ -33,8 +33,8 @@ struct PaxosCallBack {
 class Paxos {
 
 public: 
-    Paxos(uint64_t selfid, uint64_t group_size);
-    Paxos(uint64_t selfid, uint64_t group_size, PaxosCallBack callback);
+    Paxos(uint64_t logid, 
+            uint64_t selfid, uint64_t group_size, PaxosCallBack callback);
 
     // NOTICE:
     // over-come std::unque_ptr uncomplete type;

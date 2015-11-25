@@ -4,6 +4,7 @@
 #include <string>
 #include <algorithm>
 #include <random>
+#include <chrono>
 #include <limits>
 #include <cstdio>
 #include <cassert>
@@ -21,11 +22,28 @@
     assert(bCond);                                  \
 }
 
+namespace {
+
+void log_nothing(const char* /* format */, ...) {
+
+}
+
+} // namespace
+
+#ifndef TEST_DEBUG
+
+#define logdebug(format, ...) log_nothing(format, ##__VA_ARGS__)
+#define logerr(format, ...) log_nothing(format, ##__VA_ARGS__)
+
+#else
+
 #define logdebug(format, ...) \
     printf("[PAXOS DEBUG: %s %s %d] " format "\n", __FILE__, __func__, __LINE__, ##__VA_ARGS__)
 
 #define logerr(format, ...) \
     printf("[PAXOS ERROR: %s %s %d] " format "\n", __FILE__, __func__, __LINE__, ##__VA_ARGS__)
+
+#endif
 
 namespace paxos {
 
@@ -146,6 +164,20 @@ private:
     RandomIntGen<std::mt19937, int, iMin, iMax> m_tRLen;
     RandomIntGen<std::mt19937, int, 0, sizeof(DICTIONARY)-2> m_tRIdx;
 };
+
+namespace measure {
+
+template <typename F, typename ...Args>
+inline std::tuple<typename std::result_of<F(Args...)>::type, std::chrono::milliseconds>
+execution(F func, Args&&... args) {
+    auto start = std::chrono::system_clock::now();
+    auto ret = func(std::forward<Args>(args)...);
+    auto duration = std::chrono::duration_cast<
+        std::chrono::milliseconds>(std::chrono::system_clock::now() - start);
+    return std::make_tuple(ret, duration);
+}
+
+} // namespace measure
 
 } // namespace paxos
 

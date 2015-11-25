@@ -22,7 +22,7 @@ enum class PropState : uint8_t;
 class PaxosImpl {
 
 public:
-    PaxosImpl(uint64_t selfid, uint64_t group_size);
+    PaxosImpl(uint64_t logid, uint64_t selfid, uint64_t group_size);
 
     // NOTICE:
     // over-come std::unque_ptr uncomplete type;
@@ -32,6 +32,7 @@ public:
     uint64_t GetMaxIndex() { return max_index_; }
     uint64_t GetCommitedIndex() { return commited_index_; }
     uint64_t GetSelfId() { return selfid_; }
+    uint64_t GetLogId() { return logid_; }
 
 
     uint64_t NextProposingIndex();
@@ -61,6 +62,7 @@ public:
 private:
 //    Drop mutex protect
 //    :=> paxos won't be thread safe;
+    uint64_t logid_ = 0;
     uint64_t selfid_ = 0;
     uint64_t group_size_ = 0;
 

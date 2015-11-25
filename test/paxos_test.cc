@@ -1,3 +1,4 @@
+#include <iostream>
 #include "utils.h"
 #include "paxos.h"
 #include "paxos_instance.h"
@@ -52,7 +53,7 @@ protected:
                 return 0;
             };
 
-            paxos_map_.emplace(id, unique_ptr<Paxos>{new Paxos{id, 3, callback}});
+            paxos_map_.emplace(id, unique_ptr<Paxos>{new Paxos{0, id, 3, callback}});
         }
     }
 
@@ -157,6 +158,20 @@ TEST_F(PaxosTest, SimpleImplPropose)
         uint64_t commited_index = q->GetCommitedIndex();
         assert(commited_index == index);
     }
+
+    {
+        int ret = 0;
+        std::chrono::milliseconds cost{0};
+
+        tie(ret, cost) = measure::execution([](int i) -> int {
+                    for (int j = 0; j < i; ++j) {
+                        usleep((j+1) * 100);
+                    }
+                    return 0;
+                }, 10);
+        cout << ret << " cost time " << cost.count() << endl;
+    }
+
 }
 
 

@@ -32,8 +32,9 @@ std::unique_ptr<PaxosInstance> buildPaxosInstance(
 
 namespace paxos {
 
-PaxosImpl::PaxosImpl(uint64_t selfid, uint64_t group_size)
-    : selfid_(selfid)
+PaxosImpl::PaxosImpl(uint64_t logid, uint64_t selfid, uint64_t group_size)
+    : logid_(logid)
+    , selfid_(selfid)
     , group_size_(group_size)
 {
     assert(0 < selfid_);
@@ -247,6 +248,7 @@ PaxosImpl::ProduceRsp(
     }
 
     if (nullptr != rsp_msg) {
+        rsp_msg->set_logid(req_msg.logid());
         rsp_msg->set_index(req_msg.index());
     }
 
@@ -264,7 +266,8 @@ std::tuple<std::string, std::string> PaxosImpl::GetInfo(uint64_t index)
     assert(nullptr != ins);
 
     stringstream ss;
-    ss << "State " << ins->GetState()
+    ss << "LogId " << logid_ 
+       << " State " << ins->GetState()
        << " ProposeNum " << ins->GetProposeNum() 
        << " PromisedNum " << ins->GetPromisedNum()
        << " AcceptedNum " << ins->GetAcceptedNum();

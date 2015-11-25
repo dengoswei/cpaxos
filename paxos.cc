@@ -28,14 +28,9 @@ std::unique_ptr<HardState>
 
 
 
-Paxos::Paxos(uint64_t selfid, uint64_t group_size)
-    : paxos_impl_(new PaxosImpl(selfid, group_size))
-{
-
-}
-
-Paxos::Paxos(uint64_t selfid, uint64_t group_size, PaxosCallBack callback)
-    : paxos_impl_{new PaxosImpl(selfid, group_size)}
+Paxos::Paxos(uint64_t logid, 
+        uint64_t selfid, uint64_t group_size, PaxosCallBack callback)
+    : paxos_impl_{new PaxosImpl{logid, selfid, group_size}}
     , callback_(callback)
 {
     assert(nullptr != callback_.read);
@@ -68,7 +63,7 @@ Paxos::Propose(const uint64_t index,
         }
         else {
             if (index <= paxos_impl_->GetCommitedIndex()
-                    || index > paxos_impl_->GetMaxIndex()) {
+                    || index > paxos_impl_->GetMaxIndex() + 1) {
                 return std::make_tuple(-2, 0ull);
             }
 
@@ -81,7 +76,7 @@ Paxos::Propose(const uint64_t index,
             if (nullptr != ins) {
                 return std::make_tuple(-3, 0ull);
             }
-        }
+         }
 
         msg.set_index(proposing_index);
         msg.set_to_id(paxos_impl_->GetSelfId());

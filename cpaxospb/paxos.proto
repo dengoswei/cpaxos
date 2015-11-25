@@ -72,4 +72,6 @@ message Message {
     optional uint64 promised_num = 6;
     optional uint64 accepted_num = 7;
     optional bytes accepted_value = 8;
+
+    required uint64 logid = 9;
 };
