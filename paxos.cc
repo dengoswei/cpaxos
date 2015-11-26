@@ -138,6 +138,7 @@ int Paxos::Step(const Message& msg)
         if (0 != store_seq) {
             hs = CreateHardState(index, ins);
             assert(nullptr != hs);
+            hs->set_logid(paxos_impl_->GetLogId());
         }
     }
 

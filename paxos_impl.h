@@ -34,7 +34,6 @@ public:
     uint64_t GetSelfId() { return selfid_; }
     uint64_t GetLogId() { return logid_; }
 
-
     uint64_t NextProposingIndex();
     std::unique_ptr<PaxosInstance> BuildNewPaxosInstance();
     std::unique_ptr<PaxosInstance> 
