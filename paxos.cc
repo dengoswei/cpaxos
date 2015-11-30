@@ -78,6 +78,7 @@ Paxos::Propose(const uint64_t index,
             }
          }
 
+        msg.set_logid(paxos_impl_->GetLogId());
         msg.set_index(proposing_index);
         msg.set_to_id(paxos_impl_->GetSelfId());
     }

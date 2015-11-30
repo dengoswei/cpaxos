@@ -127,6 +127,9 @@ PaxosImpl::ProduceRsp(
         MessageType rsp_msg_type)
 {
     assert(nullptr != ins);
+    hassert(req_msg.logid() == logid_, 
+            "req_msg.logid %" PRIu64 " logid_ %" PRIu64, 
+            req_msg.logid(), logid_);
     hassert(req_msg.to_id() == selfid_, "type %d req_msg.to_id %" 
             PRIu64 " selfid_ %" PRIu64 "\n", 
             static_cast<int>(req_msg.type()), req_msg.to_id(), selfid_);
