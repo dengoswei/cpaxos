@@ -101,11 +101,11 @@ void PaxosImpl::CommitStep(uint64_t index, uint64_t store_seq)
 {
     assert(0 < index);
     assert(commited_index_ <= next_commited_index_);
-    commited_index_ = next_commited_index_;
     if (pending_index_.end() != pending_index_.find(index)) {
         assert(0 != pending_index_[index]);
         if (store_seq == pending_index_[index]) {
             pending_index_.erase(index);
+            TryUpdateNextCommitedIndex();
         }
     }
 
@@ -116,6 +116,8 @@ void PaxosImpl::CommitStep(uint64_t index, uint64_t store_seq)
         ins_map_.erase(index);
         logdebug("GC paxos instance index %" PRIu64, index);
     }
+
+    commited_index_ = next_commited_index_;
 }
 
 std::tuple<uint64_t, std::unique_ptr<Message>>
@@ -130,6 +132,7 @@ PaxosImpl::ProduceRsp(
             static_cast<int>(req_msg.type()), req_msg.to_id(), selfid_);
 
     uint64_t seq = 0;
+    uint64_t prev_next_commited_index = 0;
     unique_ptr<Message> rsp_msg;
 
     switch (rsp_msg_type) {
@@ -157,6 +160,12 @@ PaxosImpl::ProduceRsp(
             rsp_msg->set_accepted_num(ins->GetAcceptedNum());
             rsp_msg->set_accepted_value(ins->GetAcceptedValue());
         }
+
+        // : store the state
+        if (req_msg.proposed_num() == ins->GetPromisedNum()) {
+            seq = ++store_seq_;
+        }
+
         break;
     case MessageType::ACCPT:
         seq = ++store_seq_;
@@ -169,6 +178,7 @@ PaxosImpl::ProduceRsp(
         rsp_msg->set_accepted_value(ins->GetAcceptedValue());
         break;
     case MessageType::ACCPT_RSP:
+        seq = ++store_seq_;
         rsp_msg = unique_ptr<Message>{new Message};
         assert(nullptr != rsp_msg);
         rsp_msg->set_type(MessageType::ACCPT_RSP);
@@ -177,6 +187,12 @@ PaxosImpl::ProduceRsp(
         rsp_msg->set_to_id(req_msg.peer_id());
         rsp_msg->set_promised_num(ins->GetPromisedNum());
         rsp_msg->set_accepted_num(ins->GetAcceptedNum());
+
+        // : store the sate
+        if (req_msg.proposed_num() == ins->GetAcceptedNum()) {
+            seq = ++store_seq_;
+        }
+
         break;
     case MessageType::CHOSEN:
         // mark index as chosen
@@ -199,18 +215,20 @@ PaxosImpl::ProduceRsp(
         hassert(next_commited_index_ >= commited_index_, 
                 "commited_index_ %" PRIu64 "next_commited_index_ %" PRIu64, 
                 commited_index_, next_commited_index_);
+        // TODO: fix
+        // => Since we don't lock_guard db.Set operation, 
+        //    chance that we will incomme situation like 
+        assert(0 == seq);
+        prev_next_commited_index = next_commited_index_;
         if (req_msg.index() > next_commited_index_) {
-            chosen_set_.insert(req_msg.index());
-            for (auto next = next_commited_index_ + 1; 
-                    next <= max_index_; ++next) {
-                if (0 == chosen_set_.count(next)) {
-                    break;
-                }
-                next_commited_index_ = next;
-                chosen_set_.erase(next);
-            }
+            TryUpdateNextCommitedIndex();
         }
 
+        logdebug("index %" PRIu64 " commited_index %" PRIu64 
+                " prev_next_commit_index %" PRIu64 
+                " next_commited_index_ %" PRIu64, 
+                req_msg.index(), commited_index_, prev_next_commited_index, 
+                next_commited_index_);
         break;
     case MessageType::UNKOWN:
         if (MessageType::CHOSEN == req_msg.type()) {
@@ -272,6 +290,23 @@ std::tuple<std::string, std::string> PaxosImpl::GetInfo(uint64_t index)
        << " PromisedNum " << ins->GetPromisedNum()
        << " AcceptedNum " << ins->GetAcceptedNum();
     return make_tuple(ss.str(), ins->GetAcceptedValue());
+}
+
+void PaxosImpl::TryUpdateNextCommitedIndex() 
+{
+    uint64_t prev_next_commited_index = next_commited_index_;
+    for (auto next = next_commited_index_ + 1; next <= max_index_; ++next) {
+        assert(next > commited_index_);
+        auto ins = GetInstance(next, false);
+        assert(nullptr != ins);
+        if (!ins->IsChosen() || 
+                pending_index_.end() != pending_index_.find(next)) {
+            break;
+        }
+
+        next_commited_index_ = next;
+    }
+    return ;
 }
 
 } // namspace paxos

@@ -419,6 +419,11 @@ MessageType PaxosInstance::Step(const Message& msg)
 }
 
 
+bool PaxosInstance::IsChosen() const
+{
+    return PropState::CHOSEN == ins_impl_.getPropState();
+}
+
 
 } // namespace paxos
 

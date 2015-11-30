@@ -109,7 +109,9 @@ int Paxos::Step(const Message& msg)
             msg.index(), static_cast<int>(msg.type()), 
             msg.peer_id(), msg.to_id());
     assert(0 < index);
+
     {
+        // 1.
         std::lock_guard<std::mutex> lock(paxos_mutex_);
         prev_commit_index = paxos_impl_->GetCommitedIndex();
 
@@ -142,6 +144,7 @@ int Paxos::Step(const Message& msg)
         }
     }
 
+    // 2.
     int ret = 0;
     if (nullptr != hs) {
         ret = callback_.write(*hs); 
@@ -168,6 +171,7 @@ int Paxos::Step(const Message& msg)
                paxos_impl_->GetSelfId(), paxos_impl_->GetCommitedIndex());
     }
 
+    // TODO: after the lock_guard destructor
     if (update) {
         paxos_cv_.notify_all();
     }

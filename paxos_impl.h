@@ -31,6 +31,7 @@ public:
     // help function
     uint64_t GetMaxIndex() { return max_index_; }
     uint64_t GetCommitedIndex() { return commited_index_; }
+    uint64_t GetNextCommitedIndex() { return next_commited_index_; }
     uint64_t GetSelfId() { return selfid_; }
     uint64_t GetLogId() { return logid_; }
 
@@ -43,6 +44,9 @@ public:
         assert(0 < index);
         return index <= commited_index_;
     }
+
+
+    void TryUpdateNextCommitedIndex();
 
     // may craete a new instance
     PaxosInstance* GetInstance(uint64_t index, bool create);

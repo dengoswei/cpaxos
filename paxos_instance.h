@@ -118,6 +118,8 @@ public:
     const std::string& GetAcceptedValue() const { 
         return ins_impl_.getAcceptedValue(); 
     }
+    
+    bool IsChosen() const;
 
 
 private:
