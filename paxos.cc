@@ -42,7 +42,7 @@ Paxos::Paxos(uint64_t logid,
 Paxos::~Paxos() = default;
 
 // TODO: FIX ERROR CODE
-std::tuple<int, uint64_t>
+std::tuple<paxos::ErrorCode, uint64_t>
 Paxos::Propose(const uint64_t index, 
         gsl::cstring_view<> proposing_value, bool exclude)
 {
@@ -58,13 +58,13 @@ Paxos::Propose(const uint64_t index,
             // assign new index
             proposing_index = paxos_impl_->NextProposingIndex();        
             if (0 == proposing_index) {
-                return std::make_tuple(-1, 0ull);
+                return std::make_tuple(ErrorCode::BUSY, 0ull);
             }
         }
         else {
             if (index <= paxos_impl_->GetCommitedIndex()
                     || index > paxos_impl_->GetMaxIndex() + 1) {
-                return std::make_tuple(-2, 0ull);
+                return std::make_tuple(ErrorCode::INVALID_INDEX, 0ull);
             }
 
             proposing_index = index;
@@ -74,7 +74,7 @@ Paxos::Propose(const uint64_t index,
         if (true == exclude) {
             auto ins = paxos_impl_->GetInstance(proposing_index, false);
             if (nullptr != ins) {
-                return std::make_tuple(-3, 0ull);
+                return std::make_tuple(ErrorCode::BUSY, 0ull);
             }
          }
 
@@ -83,16 +83,16 @@ Paxos::Propose(const uint64_t index,
     }
 
     assert(0 < msg.index());
-    int ret = Step(msg);
-    if (0 != ret) {
+    auto ret = Step(msg);
+    if (ErrorCode::OK != ret) {
         logerr("Step ret %d", ret);
-        return std::make_tuple(-4, 0ull);
+        return std::make_tuple(ret, 0ull);
     }
 
-    return std::make_tuple(0, msg.index());
+    return std::make_tuple(paxos::ErrorCode::OK, msg.index());
 }
 
-int Paxos::Step(const Message& msg)
+paxos::ErrorCode Paxos::Step(const Message& msg)
 {
     bool update = false;
     uint64_t prev_commit_index = 0;
@@ -123,7 +123,7 @@ int Paxos::Step(const Message& msg)
             auto chosen_hs = callback_.read(index);
             if (nullptr == chosen_hs) {
                 logerr("callback_.read index %" PRIu64 " nullptr", index);
-                return -1;
+                return paxos::ErrorCode::STORAGE_READ_ERROR;
             }
 
             assert(index == chosen_hs->index());
@@ -149,7 +149,9 @@ int Paxos::Step(const Message& msg)
     if (nullptr != hs) {
         ret = callback_.write(*hs); 
         if (0 != ret) {
-            return ret;
+            logdebug("callback_.write index %" PRIu64 " ret %d", 
+                    hs->index(), ret);
+            return paxos::ErrorCode::STORAGE_WRITE_ERROR;
         }
     }
 
@@ -157,7 +159,8 @@ int Paxos::Step(const Message& msg)
     if (nullptr != rsp_msg) {
         ret = callback_.send(*rsp_msg);
         if (0 != ret) {
-            logdebug("callback_.send ret %d", ret);
+            logdebug("callback_.send index %" PRIu64 " msg type %d ret %d", 
+                    rsp_msg->index(), static_cast<int>(rsp_msg->type()), ret);
         }
     }
 
@@ -175,11 +178,12 @@ int Paxos::Step(const Message& msg)
     if (update) {
         paxos_cv_.notify_all();
     }
-    return 0;
+
+    return paxos::ErrorCode::OK;
 }
 
 std::tuple<
-int, uint64_t, std::unique_ptr<HardState>> Paxos::Get(uint64_t index)
+paxos::ErrorCode, uint64_t, std::unique_ptr<HardState>> Paxos::Get(uint64_t index)
 {
     assert(0 < index);
     uint64_t commited_index = 0;
@@ -188,31 +192,31 @@ int, uint64_t, std::unique_ptr<HardState>> Paxos::Get(uint64_t index)
         commited_index = paxos_impl_->GetCommitedIndex();
         if (0 != commited_index && 
                 index > paxos_impl_->GetMaxIndex()) {
-            return make_tuple(-1, 0ull, nullptr);
+            return make_tuple(ErrorCode::INVALID_INDEX, 0ull, nullptr);
         }
 
         if (index > commited_index) {
-            return make_tuple(1, commited_index, nullptr);
+            return make_tuple(
+                    ErrorCode::UNCOMMITED_INDEX, commited_index, nullptr);
         }
     }
 
     auto chosen_hs = callback_.read(index);
     if (nullptr == chosen_hs) {
-        return make_tuple(-2, 0ull, nullptr);    
+        return make_tuple(ErrorCode::STORAGE_READ_ERROR, 0ull, nullptr);    
     }
 
-    return make_tuple(0, commited_index, move(chosen_hs));
+    return make_tuple(ErrorCode::OK, commited_index, move(chosen_hs));
 }
 
-std::tuple<int, uint64_t> 
+std::tuple<paxos::ErrorCode, uint64_t> 
 Paxos::TrySet(uint64_t index, gsl::cstring_view<> proposing_value)
 {
     // set exclude == true;
     return Propose(index, proposing_value, true);    
 }
 
-void
-Paxos::Wait(uint64_t index)
+void Paxos::Wait(uint64_t index)
 {
     unique_lock<mutex> lock(paxos_mutex_);
     if (index <= paxos_impl_->GetCommitedIndex()) {
@@ -222,6 +226,20 @@ Paxos::Wait(uint64_t index)
     paxos_cv_.wait(lock, [&](){
         return index <= paxos_impl_->GetCommitedIndex();
     });
+}
+
+bool Paxos::WaitFor(uint64_t index, const std::chrono::milliseconds timeout)
+{
+    unique_lock<mutex> lock(paxos_mutex_);
+    if (index <= paxos_impl_->GetCommitedIndex()) {
+        return true;
+    }
+
+    auto time_point = chrono::system_clock::now() + timeout;
+    return paxos_cv_.wait_until(lock, time_point, 
+            [&]() -> bool {
+                return index <= paxos_impl_->GetCommitedIndex();
+            });
 }
 
 uint64_t Paxos::GetMaxIndex() 

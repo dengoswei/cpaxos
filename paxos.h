@@ -4,6 +4,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
+#include <chrono>
 #include <stdint.h>
 #include "gsl.h"
 #include "utils.h"
@@ -40,17 +41,18 @@ public:
     // over-come std::unque_ptr uncomplete type;
     ~Paxos();
 
-    std::tuple<int, uint64_t>
+    std::tuple<paxos::ErrorCode, uint64_t>
         Propose(uint64_t index, 
                 gsl::cstring_view<> proposing_value, bool exclude);
 
-    int Step(const Message& msg);
+    paxos::ErrorCode Step(const Message& msg);
 
-    std::tuple<int, uint64_t, std::unique_ptr<HardState>> Get(uint64_t index);
-    std::tuple<int, uint64_t> TrySet(
+    std::tuple<paxos::ErrorCode, uint64_t, std::unique_ptr<HardState>> Get(uint64_t index);
+    std::tuple<paxos::ErrorCode, uint64_t> TrySet(
             uint64_t index, gsl::cstring_view<> proposing_value);
 
     void Wait(uint64_t index);
+    bool WaitFor(uint64_t index, const std::chrono::milliseconds timeout);
 
     uint64_t GetMaxIndex();
     uint64_t GetCommitedIndex();
