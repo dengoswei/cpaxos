@@ -171,7 +171,8 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
         {
             if (ACTIVE_TIME_OUT > 
                     chrono::duration_cast<chrono::milliseconds>(
-                        chrono::system_clock::now() - active_proposer_time_)) {
+                        chrono::system_clock::now() - 
+                        active_proposer_time_)) {
                 // no yet timeout => do nothing
                 break;
             }
@@ -389,7 +390,11 @@ bool PaxosInstanceImpl::updateAccepted(
     return false;
 }
 
-
+bool 
+PaxosInstanceImpl::isTimeout(const std::chrono::milliseconds& timeout) const
+{
+    return active_proposer_time_ + timeout < std::chrono::system_clock::now();
+}
 
 
 PaxosInstance::PaxosInstance(int major_cnt, uint64_t prop_num)
@@ -422,6 +427,11 @@ MessageType PaxosInstance::Step(const Message& msg)
 bool PaxosInstance::IsChosen() const
 {
     return PropState::CHOSEN == ins_impl_.getPropState();
+}
+
+bool PaxosInstance::IsTimeout(const std::chrono::milliseconds& timeout) const
+{
+    return ins_impl_.isTimeout(timeout);
 }
 
 

@@ -29,22 +29,21 @@ public:
     ~PaxosImpl();
 
     // help function
-    uint64_t GetMaxIndex() { return max_index_; }
-    uint64_t GetCommitedIndex() { return commited_index_; }
-    uint64_t GetNextCommitedIndex() { return next_commited_index_; }
-    uint64_t GetSelfId() { return selfid_; }
-    uint64_t GetLogId() { return logid_; }
+    uint64_t GetMaxIndex() const { return max_index_; }
+    uint64_t GetCommitedIndex() const { return commited_index_; }
+    uint64_t GetNextCommitedIndex() const { return next_commited_index_; }
+    uint64_t GetSelfId() const { return selfid_; }
+    uint64_t GetLogId() const { return logid_; }
 
     uint64_t NextProposingIndex();
     std::unique_ptr<PaxosInstance> BuildNewPaxosInstance();
     std::unique_ptr<PaxosInstance> 
         BuildPaxosInstance(const HardState& hs, PropState prop_state);
 
-    bool IsChosen(uint64_t index) {
+    bool IsChosen(uint64_t index) const {
         assert(0 < index);
         return index <= commited_index_;
     }
-
 
     void TryUpdateNextCommitedIndex();
 
@@ -52,7 +51,7 @@ public:
     PaxosInstance* GetInstance(uint64_t index, bool create);
     void CommitStep(uint64_t index, uint64_t store_seq);
 
-    // hs seq id & rsp msg
+    // hs seq id, rsp msg
     std::tuple<
         uint64_t, std::unique_ptr<Message>>
     ProduceRsp(
@@ -60,7 +59,11 @@ public:
             const Message& req_msg, 
             MessageType rsp_msg_type);
 
-    std::tuple<std::string, std::string> GetInfo(uint64_t index);
+    // msg, accepted_value
+    std::tuple<std::string, std::string> GetInfo(uint64_t index) const;
+
+    std::set<uint64_t> GetAllTimeoutIndex(
+            const std::chrono::milliseconds timeout);
 
 private:
 //    Drop mutex protect

@@ -276,14 +276,15 @@ PaxosImpl::ProduceRsp(
     return make_tuple(seq, move(rsp_msg));
 }
 
-std::tuple<std::string, std::string> PaxosImpl::GetInfo(uint64_t index)
+std::tuple<std::string, std::string> 
+PaxosImpl::GetInfo(uint64_t index) const
 {
     assert(0 < index);
     if (ins_map_.end() == ins_map_.find(index)) {
         return make_tuple<string, string>("null", "");
     }
 
-    auto ins = ins_map_[index].get();
+    auto ins = ins_map_.at(index).get();
     assert(nullptr != ins);
 
     stringstream ss;
@@ -298,7 +299,8 @@ std::tuple<std::string, std::string> PaxosImpl::GetInfo(uint64_t index)
 void PaxosImpl::TryUpdateNextCommitedIndex() 
 {
     uint64_t prev_next_commited_index = next_commited_index_;
-    for (auto next = next_commited_index_ + 1; next <= max_index_; ++next) {
+    for (auto next = next_commited_index_ + 1; 
+            next <= max_index_; ++next) {
         assert(next > commited_index_);
         auto ins = GetInstance(next, false);
         assert(nullptr != ins);
@@ -310,6 +312,24 @@ void PaxosImpl::TryUpdateNextCommitedIndex()
         next_commited_index_ = next;
     }
     return ;
+}
+
+std::set<uint64_t> 
+PaxosImpl::GetAllTimeoutIndex(const std::chrono::milliseconds timeout)
+{
+    set<uint64_t> timeout_ins;
+    for (const auto& idx_ins_pair : ins_map_) {
+        uint64_t index = idx_ins_pair.first;
+        PaxosInstance* ins = idx_ins_pair.second.get();
+        assert(0 < index);
+        assert(nullptr != ins);
+
+        if (!ins->IsChosen() && ins->IsTimeout(timeout)) {
+            timeout_ins.insert(index);
+        }
+    }
+
+    return timeout_ins;
 }
 
 } // namspace paxos

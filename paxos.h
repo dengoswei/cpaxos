@@ -1,5 +1,6 @@
 #pragma once
 
+#include <set>
 #include <memory>
 #include <mutex>
 #include <condition_variable>
@@ -53,6 +54,10 @@ public:
 
     void Wait(uint64_t index);
     bool WaitFor(uint64_t index, const std::chrono::milliseconds timeout);
+
+    // get timeout paxos instance
+    std::set<uint64_t> GetAllTimeoutIndex(
+            const std::chrono::milliseconds timeout);
 
     uint64_t GetMaxIndex();
     uint64_t GetCommitedIndex();

@@ -70,6 +70,9 @@ public:
     bool updatePromised(uint64_t prop_num);
     bool updateAccepted(uint64_t prop_num, const std::string& prop_value);
 
+
+    bool isTimeout(const std::chrono::milliseconds& timeout) const;
+
 private:
     const int major_cnt_;
     paxos::PropNumGen prop_num_gen_;
@@ -121,6 +124,7 @@ public:
     
     bool IsChosen() const;
 
+    bool IsTimeout(const std::chrono::milliseconds& timeout) const;
 
 private:
     PaxosInstanceImpl ins_impl_;

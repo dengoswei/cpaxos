@@ -278,6 +278,14 @@ std::tuple<std::string, std::string> Paxos::GetInfo(uint64_t index)
     return paxos_impl_->GetInfo(index);
 }
 
+std::set<uint64_t> 
+Paxos::GetAllTimeoutIndex(const std::chrono::milliseconds timeout) 
+{
+    std::lock_guard<std::mutex> lock(paxos_mutex_);
+    return paxos_impl_->GetAllTimeoutIndex(timeout);
+    // TODO
+}
+
 } // namespace paxos
 
 
