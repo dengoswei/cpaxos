@@ -37,6 +37,7 @@ message HardState {
     optional bytes accepted_value = 6;
 
     required uint64 logid = 7;
+    optional uint32 seq = 8;
 };
 
 
@@ -61,13 +62,17 @@ enum MessageType {
     BEGIN_PROP = 11;
     TRY_PROP = 12;
 
+    FAST_ACCPT = 13;
+    FAST_ACCPT_RSP = 14;
+    BEGIN_FAST_PROP = 15;
+
     ERROR = -1;
 };
 
 message Message {
     required MessageType type = 1;
-    required uint64 peer_id = 2;
-    required uint64 to_id = 3;
+    required uint64 from = 2;
+    required uint64 to = 3;
 
     required uint64 index = 4;
     required uint64 proposed_num = 5;

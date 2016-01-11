@@ -33,7 +33,8 @@ public:
             uint64_t promised_num, 
             uint64_t accepted_num, 
             const std::string& accepted_value, 
-            PropState prop_state);
+            PropState prop_state, 
+            uint32_t store_seq);
 
     MessageType step(const Message& msg);
 
@@ -63,35 +64,71 @@ public:
 
     PropState stepAcceptRsp(
             uint64_t prop_num, 
-            uint64_t peer_id, uint64_t peer_promised_num);
+            uint64_t peer_id, uint64_t peer_promised_num, 
+            bool fast_accept_rsp);
 
 
     // acceptor
     bool updatePromised(uint64_t prop_num);
-    bool updateAccepted(uint64_t prop_num, const std::string& prop_value);
+    bool updateAccepted(
+            uint64_t prop_num, 
+            const std::string& prop_value, bool is_fast_accept);
 
 
     bool isTimeout(const std::chrono::milliseconds& timeout) const;
 
+    uint32_t getPendingSeq() const {
+        return pending_seq_;
+    }
+
+    void commitPendingSeq(const uint32_t seq) {
+        if (seq == pending_seq_) {
+            pending_seq_ = 0ull;
+        }
+    }
+
+    void setPendingSeq() {
+        assert(pending_seq_ <= store_seq_);
+        pending_seq_ = ++store_seq_;
+        assert(0 < pending_seq_);
+    }
+
+    bool getStrictPropFlag() const {
+        return is_strict_prop_;
+    }
+
+    void setStrictPropFlag() {
+        is_strict_prop_ = true;
+    }
+
+    void clearStrictPropFlag() {
+        is_strict_prop_ = false;
+    }
+
 private:
-    const int major_cnt_;
+    const int major_cnt_ = 0;
     paxos::PropNumGen prop_num_gen_;
 
     PropState prop_state_ = PropState::NIL; 
 
-    uint64_t max_accepted_hint_num_ = 0;
+    uint64_t max_accepted_hint_num_ = 0ull;
     std::map<uint64_t, bool> rsp_votes_;
 
     // proposer
+    bool is_strict_prop_ = false;
     std::string proposing_value_;
 
     // acceptor
-    uint64_t promised_num_ = 0;
-    uint64_t accepted_num_ = 0;
+    uint64_t promised_num_ = 0ull;
+    uint64_t accepted_num_ = 0ull;
     std::string accepted_value_;
 
     std::chrono::time_point<
         std::chrono::system_clock> active_proposer_time_; 
+
+    // pending_
+    uint32_t store_seq_ = 0;
+    uint32_t pending_seq_ = 0;
 };
 
 
@@ -106,7 +143,8 @@ public:
             uint64_t promised_num, 
             uint64_t accepted_num, 
             const std::string& accepted_value, 
-            PropState prop_state);
+            PropState prop_state, 
+            uint32_t store_seq);
 
     // NOTICE:
     // over-come std::unque_ptr uncomplete type;
@@ -114,7 +152,10 @@ public:
 
     MessageType Step(const Message& msg);
 
-    int GetState() const { return static_cast<int>(ins_impl_.getPropState()); }
+    int GetState() const { 
+        return static_cast<int>(ins_impl_.getPropState()); 
+    }
+
     uint64_t GetProposeNum() const { return ins_impl_.getProposeNum(); }
     uint64_t GetPromisedNum() const { return ins_impl_.getPromisedNum(); }
     uint64_t GetAcceptedNum() const { return ins_impl_.getAcceptedNum(); }
@@ -125,6 +166,21 @@ public:
     bool IsChosen() const;
 
     bool IsTimeout(const std::chrono::milliseconds& timeout) const;
+
+    uint32_t GetPendingSeq() const {
+        return ins_impl_.getPendingSeq();
+    }
+
+    void CommitPendingSeq(uint32_t seq) {
+        ins_impl_.commitPendingSeq(seq);
+    }
+
+    std::unique_ptr<paxos::HardState> 
+        GetPendingHardState(uint64_t logid, uint64_t paxos_index) const;
+
+    bool GetStrictPropFlag() const {
+        return ins_impl_.getStrictPropFlag();
+    }
 
 private:
     PaxosInstanceImpl ins_impl_;

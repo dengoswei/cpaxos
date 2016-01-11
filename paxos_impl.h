@@ -9,6 +9,7 @@
 #include <cassert>
 #include <stdint.h>
 #include "paxos.pb.h"
+#include "utils.h"
 
 
 namespace paxos {
@@ -22,7 +23,10 @@ enum class PropState : uint8_t;
 class PaxosImpl {
 
 public:
-    PaxosImpl(uint64_t logid, uint64_t selfid, uint64_t group_size);
+    PaxosImpl(
+        uint64_t logid, 
+        uint64_t selfid, 
+        const std::set<uint64_t>& group_ids);
 
     // NOTICE:
     // over-come std::unque_ptr uncomplete type;
@@ -52,8 +56,8 @@ public:
     void CommitStep(uint64_t index, uint64_t store_seq);
 
     // hs seq id, rsp msg
-    std::tuple<
-        uint64_t, std::unique_ptr<Message>>
+//    std::unique_ptr<Message>
+    std::vector<std::unique_ptr<Message>>
     ProduceRsp(
             const PaxosInstance* ins, 
             const Message& req_msg, 
@@ -65,22 +69,26 @@ public:
     std::set<uint64_t> GetAllTimeoutIndex(
             const std::chrono::milliseconds timeout);
 
+    bool UpdatePropNumGen(const uint64_t prop_num) {
+        return prop_num_gen_.Update(prop_num);
+    }
+
 private:
 //    Drop mutex protect
 //    :=> paxos won't be thread safe;
     uint64_t logid_ = 0;
     uint64_t selfid_ = 0;
-    uint64_t group_size_ = 0;
+    std::set<uint64_t> group_ids_;
 
     uint64_t max_index_ = 0;
     uint64_t commited_index_ = 0;
     uint64_t next_commited_index_ = 0;
+    paxos::PropNumGen prop_num_gen_;
     // uint64_t proposing_index_ = 0;
 
     uint64_t store_seq_ = 0;
 
     std::set<uint64_t> chosen_set_;
-    std::map<uint64_t, uint64_t> pending_index_;
     std::map<uint64_t, std::unique_ptr<PaxosInstance>> ins_map_;
 };
 

@@ -23,7 +23,7 @@ GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
 all: $(TESTS)
 
 clean :
-	rm -f $(TESTS) *.o cpaxospb/*.o test/*.o
+	rm -f $(TESTS) *.o cpaxospb/*.o cpaxospb/paxos.pb.* test/*.o
 
 libcpaxos.a: paxos.o paxos_impl.o paxos_instance.o cpaxospb/paxos.pb.o
 	$(ARSTATICLIB)

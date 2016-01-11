@@ -57,7 +57,8 @@ PaxosInstanceImpl::PaxosInstanceImpl(
         uint64_t promised_num, 
         uint64_t accepted_num, 
         const std::string& accepted_value, 
-        PropState prop_state)
+        PropState prop_state, 
+        uint32_t store_seq)
     : major_cnt_(major_cnt)
     , prop_num_gen_(prop_num)
     , prop_state_(prop_state)
@@ -65,6 +66,7 @@ PaxosInstanceImpl::PaxosInstanceImpl(
     , accepted_num_(accepted_num)
     , accepted_value_(accepted_value)
     , active_proposer_time_(chrono::system_clock::now())
+    , store_seq_(store_seq)
 {
 
 }
@@ -90,7 +92,7 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
 
             assert(PropState::WAIT_PREPARE == prop_state_);
             auto next_prop_state = stepPrepareRsp(
-                    msg.proposed_num(), msg.peer_id(), 
+                    msg.proposed_num(), msg.from(), 
                     msg.promised_num(), msg.accepted_num(), 
                     msg.accepted_value());
             rsp_msg_type = updatePropState(next_prop_state);
@@ -100,6 +102,7 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
         }
         break;
     case MessageType::ACCPT_RSP:
+    case MessageType::FAST_ACCPT_RSP:
         {
             if (PropState::WAIT_ACCEPT != prop_state_) {
                 logdebug("msgtype::ACCPT_RSP but instance in stat %d", 
@@ -110,7 +113,8 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             assert(PropState::WAIT_ACCEPT == prop_state_);
             assert(true == msg.accepted_value().empty());
             auto next_prop_state = stepAcceptRsp(
-                    msg.proposed_num(), msg.peer_id(), msg.accepted_num());
+                    msg.proposed_num(), msg.from(), msg.accepted_num(), 
+                    MessageType::FAST_ACCPT_RSP == msg.type());
             rsp_msg_type = updatePropState(next_prop_state);
             logdebug("%s rsp_msg_type %d\n", 
                     __func__, static_cast<int>(rsp_msg_type));
@@ -121,9 +125,16 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
         rsp_msg_type = MessageType::PROP_RSP;
         break;
     case MessageType::ACCPT:
-        updateAccepted(msg.proposed_num(), msg.accepted_value());
-        rsp_msg_type = MessageType::ACCPT_RSP;
+    case MessageType::FAST_ACCPT:
+    {
+        bool fast_accept = MessageType::FAST_ACCPT == msg.type();
+        updateAccepted(
+                msg.proposed_num(), msg.accepted_value(), fast_accept);
+        rsp_msg_type = fast_accept ? 
+            MessageType::FAST_ACCPT_RSP : MessageType::ACCPT_RSP;
+    }
         break;
+
     case MessageType::CHOSEN:
         {
             if (msg.accepted_num() == accepted_num_) {
@@ -145,7 +156,7 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             assert(false == updatePromised(prop_num_gen_.Get()));
             // self accepted
             assert(false == updateAccepted(
-                        prop_num_gen_.Get(), msg.accepted_value()));
+                        prop_num_gen_.Get(), msg.accepted_value(), false));
             updatePropState(PropState::CHOSEN);
         }
         break;
@@ -160,6 +171,11 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             }
 
             assert(PropState::NIL == prop_state_);
+            if (0ull == getProposeNum()) {
+                assert(0ull == getAcceptedNum());
+                setStrictPropFlag(); // mark as strict prop
+            }
+
             auto next_prop_state = stepBeginPropose(
                     false, msg.proposed_num(), msg.accepted_value());
             assert(PropState::PREPARE == next_prop_state);
@@ -183,6 +199,37 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             assert(PropState::PREPARE == next_prop_state);
             rsp_msg_type = updatePropState(next_prop_state);
             assert(PropState::WAIT_PREPARE == prop_state_);
+        }
+        break;
+
+    case MessageType::BEGIN_FAST_PROP:
+        {
+            if (PropState::NIL != prop_state_) {
+                logerr("msgtype::BEGIN_FAST_PROP but instance in state %d", 
+                        static_cast<int>(prop_state_));
+                break;
+            }
+
+            assert(PropState::NIL == prop_state_);
+            assert(0ull == getPromisedNum());
+            assert(0ull == getAcceptedNum());
+            setStrictPropFlag(); // mark as strict prop
+            // => skip prepare phase => go directly to accept phase
+
+            auto new_state = 
+                stepBeginPropose(false, 0ull, msg.accepted_value());
+            assert(PropState::PREPARE == new_state);
+            prop_state_ = new_state;
+
+            new_state = beginPreparePhase();
+            assert(PropState::WAIT_PREPARE == new_state);
+            updatePropState(new_state);
+
+            new_state = beginAcceptPhase();
+            assert(PropState::WAIT_ACCEPT == new_state);
+            updatePropState(new_state);
+            assert(PropState::WAIT_ACCEPT == prop_state_); 
+            rsp_msg_type = MessageType::FAST_ACCPT;
         }
         break;
 
@@ -254,6 +301,7 @@ PropState PaxosInstanceImpl::stepBeginPropose(
     proposing_value_ = proposing_value;
 
     promised_num_ = max(promised_num_, hint_proposed_num);
+    setPendingSeq();
     return PropState::PREPARE;
 }
 
@@ -279,7 +327,8 @@ PropState PaxosInstanceImpl::beginPreparePhase()
 PropState PaxosInstanceImpl::beginAcceptPhase()
 {
     assert(PropState::ACCEPT == prop_state_);
-    bool reject = updateAccepted(prop_num_gen_.Get(), proposing_value_);
+    bool reject = updateAccepted(
+            prop_num_gen_.Get(), proposing_value_, false);
     if (reject) {
         return PropState::PREPARE;
     }
@@ -314,6 +363,7 @@ PropState PaxosInstanceImpl::stepPrepareRsp(
             if (peer_accepted_num > max_accepted_hint_num_) {
                 max_accepted_hint_num_ = peer_accepted_num;
                 proposing_value_ = peer_accepted_value;
+                clearStrictPropFlag();
             }
         }
     }
@@ -336,7 +386,7 @@ PropState PaxosInstanceImpl::stepPrepareRsp(
 PropState PaxosInstanceImpl::stepAcceptRsp(
         uint64_t prop_num, 
         uint64_t peer_id, 
-        uint64_t peer_accepted_num)
+        uint64_t peer_accepted_num, bool fast_accept_rsp)
 {
     assert(0 < peer_id);
     assert(0 < major_cnt_);
@@ -347,8 +397,13 @@ PropState PaxosInstanceImpl::stepAcceptRsp(
         return PropState::WAIT_ACCEPT;
     }
 
-    updateRspVotes(peer_id, 
-            max_proposed_num >= peer_accepted_num, rsp_votes_);
+    updateRspVotes(
+            peer_id, 
+            fast_accept_rsp ? 
+                max_proposed_num == peer_accepted_num : 
+                max_proposed_num >= peer_accepted_num, 
+            rsp_votes_);
+//            max_proposed_num >= peer_accepted_num, rsp_votes_);
 
     int accept_cnt = 0;
     int reject_cnt = 0;
@@ -372,11 +427,14 @@ bool PaxosInstanceImpl::updatePromised(uint64_t prop_num)
     }
 
     promised_num_ = prop_num;
+    setPendingSeq();
     return false;
 }
 
 bool PaxosInstanceImpl::updateAccepted(
-        uint64_t prop_num, const std::string& prop_value)
+        uint64_t prop_num, 
+        const std::string& prop_value, 
+        bool is_fast_accept)
 {
     active_proposer_time_ = chrono::system_clock::now();
     if (promised_num_ > prop_num) {
@@ -384,16 +442,27 @@ bool PaxosInstanceImpl::updateAccepted(
         return true;
     }
 
+    if (true == is_fast_accept) {
+        if(0ull != accepted_num_) {
+            // do fast accept only when 0ull == accepted_num_
+            // => so only once!
+            return false; 
+        }
+        assert(0ull == accepted_num_);
+    }
+
     promised_num_ = prop_num;
     accepted_num_ = prop_num;
     accepted_value_ = prop_value;
+    setPendingSeq();
     return false;
 }
 
 bool 
 PaxosInstanceImpl::isTimeout(const std::chrono::milliseconds& timeout) const
 {
-    return active_proposer_time_ + timeout < std::chrono::system_clock::now();
+    return active_proposer_time_ + 
+        timeout < std::chrono::system_clock::now();
 }
 
 
@@ -409,9 +478,12 @@ PaxosInstance::PaxosInstance(
         uint64_t promised_num, 
         uint64_t accepted_num, 
         const std::string& accepted_value, 
-        PropState prop_state)
-    : ins_impl_(major_cnt, proposed_num, 
-            promised_num, accepted_num, accepted_value, prop_state)
+        PropState prop_state, 
+        uint32_t store_seq)
+    : ins_impl_(
+            major_cnt, proposed_num, 
+            promised_num, accepted_num, 
+            accepted_value, prop_state, store_seq)
 {
 
 }
@@ -434,6 +506,31 @@ bool PaxosInstance::IsTimeout(const std::chrono::milliseconds& timeout) const
     return ins_impl_.isTimeout(timeout);
 }
 
+std::unique_ptr<paxos::HardState> 
+PaxosInstance::GetPendingHardState(
+        uint64_t logid, uint64_t paxos_index) const
+{
+    assert(0ull < index);
+    if (0 == ins_impl_.getPendingSeq()) {
+        return nullptr; // no pending
+    }
+
+    auto hs = make_unique<HardState>();
+    assert(nullptr != hs);
+
+    hs->set_logid(logid);
+    hs->set_index(paxos_index);
+    hs->set_promised_num(GetProposeNum());
+    hs->set_promised_num(GetPromisedNum());
+    hs->set_accepted_num(GetAcceptedNum());
+    if (0ull != GetAcceptedNum()) {
+        hs->set_accepted_value(GetAcceptedValue());
+    }
+
+    hs->set_seq(GetPendingSeq());
+    assert(0 < hs->seq());
+    return hs;
+}
 
 } // namespace paxos
 

@@ -25,18 +25,19 @@ std::unique_ptr<HardState>
 
 struct PaxosCallBack {
 
-    std::function<std::unique_ptr<HardState>(uint64_t index)> read;
+    std::function<std::unique_ptr<HardState>(uint64_t, uint64_t)> read;
     std::function<int(const HardState&)> write;
 
-    std::function<int(const Message&)> send;
+    std::function<int(std::unique_ptr<Message>)> send;
 };
 
 
 class Paxos {
 
 public: 
-    Paxos(uint64_t logid, 
-            uint64_t selfid, uint64_t group_size, PaxosCallBack callback);
+    Paxos(
+        uint64_t logid, uint64_t selfid, 
+        const std::set<uint64_t>& group_ids, PaxosCallBack callback);
 
     // NOTICE:
     // over-come std::unque_ptr uncomplete type;

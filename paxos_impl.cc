@@ -21,10 +21,30 @@ std::unique_ptr<PaxosInstance> buildPaxosInstance(
     
     uint64_t prop_num = prop_num_compose(selfid, prop_cnt); 
     assert(0 < prop_num);
-    auto new_ins = unique_ptr<PaxosInstance>{
-        new PaxosInstance{major_cnt, prop_num}};
+    
+    auto new_ins = make_unique<PaxosInstance>(major_cnt, prop_num);
     assert(nullptr != new_ins);
     return new_ins;
+}
+
+std::vector<std::unique_ptr<paxos::Message>>
+batchBuildMsg(
+        const uint64_t exclude_id, 
+        const std::set<uint64_t>& group_ids, 
+        const paxos::Message& msg_template)
+{
+    vector<unique_ptr<Message>> vec_msg;
+    vec_msg.reserve(group_ids.size() - 1);
+    for (auto id : group_ids) {
+        if (exclude_id == id) {
+            continue;
+        }
+
+        auto msg = make_unique<Message>(msg_template);
+        assert(nullptr != msg);
+        msg->set_to(id);
+    }
+    return vec_msg;
 }
 
 } // namespace
@@ -32,13 +52,18 @@ std::unique_ptr<PaxosInstance> buildPaxosInstance(
 
 namespace paxos {
 
-PaxosImpl::PaxosImpl(uint64_t logid, uint64_t selfid, uint64_t group_size)
+PaxosImpl::PaxosImpl(
+        uint64_t logid, 
+        uint64_t selfid, 
+        const std::set<uint64_t>& group_ids)
     : logid_(logid)
     , selfid_(selfid)
-    , group_size_(group_size)
+    , group_ids_(group_ids)
+    , prop_num_gen_(static_cast<uint8_t>(selfid_), 0ull)
 {
-    assert(0 < selfid_);
-    assert(selfid_ <= group_size_);
+    assert(0ull < selfid_);
+    assert(selfid_ < (1ull << 8));
+    assert(group_ids_.end() != group_ids_.find(selfid_));
 }
 
 PaxosImpl::~PaxosImpl() = default;
@@ -55,17 +80,17 @@ uint64_t PaxosImpl::NextProposingIndex()
 std::unique_ptr<PaxosInstance>
 PaxosImpl::BuildNewPaxosInstance()
 {
-    return buildPaxosInstance(group_size_, selfid_, 0);
+    return buildPaxosInstance(
+            group_ids_.size(), selfid_, prop_num_gen_.Get());
 }
 
 std::unique_ptr<PaxosInstance>
 PaxosImpl::BuildPaxosInstance(const HardState& hs, PropState prop_state)
 {
-    const int major_cnt = static_cast<int>(group_size_) / 2 + 1;
-    auto new_ins = unique_ptr<PaxosInstance>{
-        new PaxosInstance{
+    const int major_cnt = static_cast<int>(group_ids_.size()) / 2 + 1;
+    auto new_ins = make_unique<PaxosInstance>(
             major_cnt, hs.proposed_num(), hs.promised_num(), 
-            hs.accepted_num(), hs.accepted_value(), prop_state}};
+            hs.accepted_num(), hs.accepted_value(), prop_state, hs.seq());
     assert(nullptr != new_ins);
     return new_ins;
 }
@@ -85,7 +110,8 @@ PaxosInstance* PaxosImpl::GetInstance(uint64_t index, bool create)
 
         // need build a new paxos instance
         auto new_ins = 
-            buildPaxosInstance(group_size_, selfid_, 0);
+            buildPaxosInstance(
+                    group_ids_.size(), selfid_, prop_num_gen_.Get());
         assert(nullptr != new_ins);
         ins_map_[index] = move(new_ins);
         assert(nullptr == new_ins);
@@ -101,17 +127,14 @@ void PaxosImpl::CommitStep(uint64_t index, uint64_t store_seq)
 {
     assert(0 < index);
     assert(commited_index_ <= next_commited_index_);
-    if (pending_index_.end() != pending_index_.find(index)) {
-        assert(0 != pending_index_[index]);
-        if (store_seq == pending_index_[index]) {
-            pending_index_.erase(index);
-            TryUpdateNextCommitedIndex();
-        }
-    }
+
+    auto ins = GetInstance(index, false);
+    assert(nullptr != ins);
+    ins->CommitPendingSeq(store_seq);
 
     if (ins_map_.size() >= MAX_INS_SIZE && 
             index < commited_index_ &&
-            pending_index_.end() == pending_index_.find(index)) {
+            0ull == ins->GetPendingSeq()) {
         // gc paxos instance: only commited & non-pending one
         ins_map_.erase(index);
         logdebug("GC paxos instance index %" PRIu64, index);
@@ -120,7 +143,8 @@ void PaxosImpl::CommitStep(uint64_t index, uint64_t store_seq)
     commited_index_ = next_commited_index_;
 }
 
-std::tuple<uint64_t, std::unique_ptr<Message>>
+// std::unique_ptr<Message>
+std::vector<std::unique_ptr<Message>>
 PaxosImpl::ProduceRsp(
         const PaxosInstance* ins, 
         const Message& req_msg, 
@@ -130,32 +154,41 @@ PaxosImpl::ProduceRsp(
     hassert(req_msg.logid() == logid_, 
             "req_msg.logid %" PRIu64 " logid_ %" PRIu64, 
             req_msg.logid(), logid_);
-    hassert(req_msg.to_id() == selfid_, "type %d req_msg.to_id %" 
+    hassert(req_msg.to() == selfid_, "type %d req_msg.to %" 
             PRIu64 " selfid_ %" PRIu64 "\n", 
-            static_cast<int>(req_msg.type()), req_msg.to_id(), selfid_);
+            static_cast<int>(req_msg.type()), req_msg.to(), selfid_);
 
-    uint64_t seq = 0;
     uint64_t prev_next_commited_index = 0;
-    unique_ptr<Message> rsp_msg;
+    Message msg_template;
+    {
+        msg_template.set_logid(req_msg.logid());
+        msg_template.set_index(req_msg.index());
+        msg_template.set_type(rsp_msg_type);
+        msg_template.set_from(GetSelfId());
+        msg_template.set_to(req_msg.from());
 
+        msg_template.set_proposed_num(ins->GetProposeNum());
+    }
+
+    vector<unique_ptr<Message>> vec_msg;
     switch (rsp_msg_type) {
     case MessageType::PROP:
-        seq = ++store_seq_;
-        rsp_msg = unique_ptr<Message>{new Message};
-        assert(nullptr != rsp_msg);
-
-        rsp_msg->set_type(MessageType::PROP);
-        rsp_msg->set_proposed_num(ins->GetProposeNum());
-        rsp_msg->set_peer_id(selfid_);
-        rsp_msg->set_to_id(0);  // broad cast;
+    {
+        // update paos_impl:: prop_num_gen_
+        UpdatePropNumGen(ins->GetProposeNum());
+ 
+        vec_msg = batchBuildMsg(
+                GetSelfId(), group_ids_, msg_template);
+        assert(false == vec_msg.empty());
+        assert(vec_msg.size() == group_ids_.size() - size_t{1});
+    }
         break;
     case MessageType::PROP_RSP:
-        rsp_msg = unique_ptr<Message>{new Message};
+    {
+        auto rsp_msg = make_unique<Message>(msg_template);
         assert(nullptr != rsp_msg);
-        rsp_msg->set_type(MessageType::PROP_RSP);
-        rsp_msg->set_proposed_num(req_msg.proposed_num());
-        rsp_msg->set_peer_id(selfid_);
-        rsp_msg->set_to_id(req_msg.peer_id());
+        
+        assert(MessageType::PROP_RSP == rsp_msg->type());
         rsp_msg->set_promised_num(ins->GetPromisedNum());
         assert(rsp_msg->promised_num() >= rsp_msg->proposed_num());
         if (req_msg.proposed_num() == rsp_msg->promised_num()) {
@@ -164,64 +197,54 @@ PaxosImpl::ProduceRsp(
             rsp_msg->set_accepted_value(ins->GetAcceptedValue());
         }
 
-        // : store the state
-        if (req_msg.proposed_num() == ins->GetPromisedNum()) {
-            seq = ++store_seq_;
-        }
-
+        vec_msg.emplace_back(move(rsp_msg));
+    }
         break;
     case MessageType::ACCPT:
-        seq = ++store_seq_;
-        rsp_msg = unique_ptr<Message>{new Message};
-        assert(nullptr != rsp_msg);
-        rsp_msg->set_type(MessageType::ACCPT);
-        rsp_msg->set_proposed_num(ins->GetProposeNum());
-        rsp_msg->set_peer_id(selfid_);
-        rsp_msg->set_to_id(0); // broadcast
-        rsp_msg->set_accepted_value(ins->GetAcceptedValue());
+    case MessageType::FAST_ACCPT:
+    {
+        msg_template.set_accepted_value(ins->GetAcceptedValue());
+        vec_msg = batchBuildMsg(GetSelfId(), group_ids_, msg_template);
+        assert(false == vec_msg.empty());
+        assert(vec_msg.size() == group_ids_.size() - size_t{1});
+    }
         break;
     case MessageType::ACCPT_RSP:
-        seq = ++store_seq_;
-        rsp_msg = unique_ptr<Message>{new Message};
+    case MessageType::FAST_ACCPT_RSP:
+    {
+        auto rsp_msg = make_unique<Message>(msg_template);
         assert(nullptr != rsp_msg);
-        rsp_msg->set_type(MessageType::ACCPT_RSP);
-        rsp_msg->set_proposed_num(req_msg.proposed_num());
-        rsp_msg->set_peer_id(selfid_);
-        rsp_msg->set_to_id(req_msg.peer_id());
+
         rsp_msg->set_promised_num(ins->GetPromisedNum());
         rsp_msg->set_accepted_num(ins->GetAcceptedNum());
-
-        // : store the sate
-        if (req_msg.proposed_num() == ins->GetAcceptedNum()) {
-            seq = ++store_seq_;
-        }
-
+        vec_msg.emplace_back(move(rsp_msg));
+    }
         break;
     case MessageType::CHOSEN:
+    {
         // mark index as chosen
         if (MessageType::CHOSEN != req_msg.type()) {
-            rsp_msg = unique_ptr<Message>{new Message};
-            assert(nullptr != rsp_msg);
-            rsp_msg->set_type(MessageType::CHOSEN);
-            rsp_msg->set_proposed_num(req_msg.proposed_num());
-            rsp_msg->set_peer_id(selfid_);
-            rsp_msg->set_to_id(0); // broadcast
-            rsp_msg->set_promised_num(ins->GetPromisedNum());
-            rsp_msg->set_accepted_num(ins->GetAcceptedNum());
-            if (rsp_msg->accepted_num() != req_msg.accepted_num()) {
-                rsp_msg->set_accepted_value(ins->GetAcceptedValue());
+           
+            msg_template.set_promised_num(ins->GetPromisedNum());
+            msg_template.set_accepted_num(ins->GetAcceptedNum());
+            if (msg_template.accepted_num() != req_msg.accepted_num()) {
+                msg_template.set_accepted_value(ins->GetAcceptedValue());
             }
+
+            vec_msg = batchBuildMsg(GetSelfId(), group_ids_, msg_template);
+            assert(false == vec_msg.empty());
+            assert(vec_msg.size() == group_ids_.size() - size_t{1});
         }
         // else => no rsp
 
         // update next_commited_index_
         hassert(next_commited_index_ >= commited_index_, 
-                "commited_index_ %" PRIu64 "next_commited_index_ %" PRIu64, 
+                "commited_index_ %" PRIu64 
+                "next_commited_index_ %" PRIu64, 
                 commited_index_, next_commited_index_);
         // TODO: fix
         // => Since we don't lock_guard db.Set operation, 
         //    chance that we will incomme situation like 
-        assert(0 == seq);
         prev_next_commited_index = next_commited_index_;
         if (req_msg.index() > next_commited_index_) {
             TryUpdateNextCommitedIndex();
@@ -230,24 +253,31 @@ PaxosImpl::ProduceRsp(
         logdebug("index %" PRIu64 " commited_index %" PRIu64 
                 " prev_next_commit_index %" PRIu64 
                 " next_commited_index_ %" PRIu64, 
-                req_msg.index(), commited_index_, prev_next_commited_index, 
+                req_msg.index(), commited_index_,
+                prev_next_commited_index, 
                 next_commited_index_);
+    }
         break;
     case MessageType::UNKOWN:
+    {
         if (MessageType::CHOSEN == req_msg.type()) {
             assert(req_msg.accepted_num() != ins->GetAcceptedNum());
 
-            seq = ++store_seq_;
             // rsp_msg for self
-            rsp_msg = unique_ptr<Message>{new Message};
+            // TODO ?
+            auto rsp_msg = make_unique<Message>(msg_template);
             assert(nullptr != rsp_msg);
+
             rsp_msg->set_type(MessageType::CHOSEN);
-            rsp_msg->set_proposed_num(ins->GetProposeNum());
-            rsp_msg->set_peer_id(selfid_);
-            rsp_msg->set_to_id(selfid_); // self-call after succ store hs;??
+            rsp_msg->set_to(selfid_); 
+            // self-call after succ store hs;??
             rsp_msg->set_promised_num(ins->GetPromisedNum());
             rsp_msg->set_accepted_num(ins->GetAcceptedNum());
+
+            vec_msg.emplace_back(move(rsp_msg));
+            assert(nullptr == rsp_msg);
         }
+    }
         // else => ignore
         break;
     default:
@@ -257,23 +287,7 @@ PaxosImpl::ProduceRsp(
         break;
     }
 
-    if (pending_index_.end() != pending_index_.find(req_msg.index())) {
-        if (0 == seq) {
-            seq = pending_index_[req_msg.index()];
-        }
-    }
-
-    if (0 != seq) {
-        assert(seq >= pending_index_[req_msg.index()]);
-        pending_index_[req_msg.index()] = seq;
-    }
-
-    if (nullptr != rsp_msg) {
-        rsp_msg->set_logid(req_msg.logid());
-        rsp_msg->set_index(req_msg.index());
-    }
-
-    return make_tuple(seq, move(rsp_msg));
+    return vec_msg;
 }
 
 std::tuple<std::string, std::string> 
@@ -304,8 +318,7 @@ void PaxosImpl::TryUpdateNextCommitedIndex()
         assert(next > commited_index_);
         auto ins = GetInstance(next, false);
         assert(nullptr != ins);
-        if (!ins->IsChosen() || 
-                pending_index_.end() != pending_index_.find(next)) {
+        if (!ins->IsChosen() || 0ull != ins->GetPendingSeq()) {
             break;
         }
 

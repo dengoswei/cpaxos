@@ -24,6 +24,9 @@
 
 namespace {
 
+void log_nothing(const char* /* format */, ...) 
+    __attribute__((format(printf, 1, 2)));
+
 void log_nothing(const char* /* format */, ...) {
 
 }
@@ -47,11 +50,6 @@ void log_nothing(const char* /* format */, ...) {
 
 namespace paxos {
 
-inline uint64_t GetCurrentTick()
-{
-    return 0ull; // TODO
-}
-
 inline uint64_t prop_num_compose(uint8_t id, uint64_t prop_cnt)
 {
     return (prop_cnt << 8) + id;
@@ -67,28 +65,43 @@ std::tuple<uint8_t, uint64_t> prop_num_decompose(uint64_t prop_num)
 class PropNumGen {
 
 public:
-    PropNumGen(uint64_t prop_num)
+    PropNumGen(uint8_t selfid, uint64_t prop_cnt) 
+        : selfid_(selfid)
+        , prop_cnt_(prop_cnt)
     {
+
+    }
+
+    PropNumGen(uint64_t prop_num) {
         std::tie(selfid_, prop_cnt_) = prop_num_decompose(prop_num);
         assert(0 != selfid_);
     }
 
-    uint64_t Get() const
-    {
+    uint64_t Get() const {
         return prop_num_compose(selfid_, prop_cnt_);
+    }
+
+    bool Update(uint64_t prop_num) {
+        uint8_t id = 0;
+        uint64_t cnt = 0;
+        std::tie(id, cnt) = prop_num_decompose(prop_num);
+        if (id != selfid_ || cnt <= prop_cnt_) {
+            return false;
+        }
+
+        prop_cnt_ = cnt;
+        return true;
     }
 
     uint64_t Next(uint64_t hint_num)
     {
         uint8_t hint_id = 0;
         uint64_t hint_prop_cnt = 0;
-        std::tie(hint_id, hint_prop_cnt) =
-            prop_num_decompose(hint_num);    
+        std::tie(hint_id, hint_prop_cnt) = prop_num_decompose(hint_num);    
         
         uint64_t prev_prop_num = 
             prop_num_compose(selfid_, prop_cnt_);
-        if (prop_cnt_+1 <= hint_prop_cnt && selfid_ < hint_id)
-        {
+        if (prop_cnt_+1 <= hint_prop_cnt && selfid_ < hint_id) {
             ++hint_prop_cnt;
         }
 
@@ -101,6 +114,11 @@ public:
         hassert(next_prop_num >= hint_num, 
                 "%" PRIu64 " %" PRIu64, next_prop_num, hint_num);
         return next_prop_num;
+    }
+
+    bool IsLocalNum(uint64_t prop_num) const {
+        auto id_cnt = prop_num_decompose(prop_num);
+        return selfid_ == std::get<0>(id_cnt);
     }
 
 private:

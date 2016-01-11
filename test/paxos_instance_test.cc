@@ -39,8 +39,8 @@ TEST_F(PaxosInstanceTest, SimpleImplPropose)
     msg.set_proposed_num(ins.getProposeNum());
     msg.set_promised_num(ins.getProposeNum());
 
-    msg.set_peer_id(1);
-    assert(msg.peer_id() != static_cast<uint64_t>(selfid));
+    msg.set_from(1);
+    assert(msg.from() != static_cast<uint64_t>(selfid));
     auto rsp_msg_type = ins.step(msg);
     ASSERT_EQ(MessageType::ACCPT, rsp_msg_type);
 
@@ -76,7 +76,7 @@ TEST_F(PaxosInstanceTest, SimplePropose)
     msg.set_type(MessageType::PROP_RSP);
     msg.set_proposed_num(ins.GetProposeNum());
     msg.set_promised_num(ins.GetProposeNum());
-    msg.set_peer_id(1);
+    msg.set_from(1);
     auto rsp_msg_type = ins.Step(msg);
     ASSERT_EQ(MessageType::ACCPT, rsp_msg_type);
 
