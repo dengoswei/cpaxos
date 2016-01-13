@@ -43,63 +43,44 @@ Paxos::Paxos(
 
 Paxos::~Paxos() = default;
 
-// TODO: FIX ERROR CODE
 std::tuple<paxos::ErrorCode, uint64_t>
-Paxos::Propose(const uint64_t index, 
-        gsl::cstring_view<> proposing_value, bool exclude)
+Paxos::Propose(const uint64_t index, gsl::cstring_view<> proposing_value)
 {
-    Message msg;
-    msg.set_type(MessageType::BEGIN_PROP);
-    msg.set_accepted_value(
+    Message prop_msg;
+    prop_msg.set_type(MessageType::BEGIN_PROP);
+    prop_msg.set_accepted_value(
             std::string{proposing_value.data(), proposing_value.size()});
 
-    uint64_t proposing_index = 0;
+    std::lock_guard<std::mutex> prop_lock(prop_mutex_);
     {
         std::lock_guard<std::mutex> lock(paxos_mutex_);
-        if (0 == index) {
-            // assign new index
-            proposing_index = paxos_impl_->NextProposingIndex();        
-            if (0 == proposing_index) {
-                return std::make_tuple(ErrorCode::BUSY, 0ull);
-            }
-        }
-        else {
-            if (index <= paxos_impl_->GetCommitedIndex()
-                    || index > paxos_impl_->GetMaxIndex() + 1) {
-                return std::make_tuple(ErrorCode::INVALID_INDEX, 0ull);
-            }
-
-            proposing_index = index;
+        uint64_t prop_index = paxos_impl_->NextProposingIndex();
+        if (0ull == prop_index || 
+                (0ull != index && index != prop_index)) {
+            return std::make_tuple(ErrorCode::BUSY, 0ull);
         }
 
-        assert(0ull == index || index == proposing_index);
-        if (true == exclude) {
-            assert(0ull < index);
-            auto ins = paxos_impl_->GetInstance(proposing_index, false);
-            if (nullptr != ins) {
-                return std::make_tuple(ErrorCode::BUSY, 0ull);
-            }
-            msg.set_type(MessageType::TRY_PROP);
+        assert(0ull < prop_index);
+        if (paxos_impl_->CanFastProp(prop_index)) {
+            // try fast prop
+            prop_msg.set_type(MessageType::BEGIN_FAST_PROP);
         }
 
-        if (paxos_impl_->CanFastProp(msg.index())) {
-            assert(MessageType::BEGIN_PROP == msg.type());
-            msg.set_type(MessageType::BEGIN_FAST_PROP);
-        }
-
-        msg.set_logid(paxos_impl_->GetLogId());
-        msg.set_index(proposing_index);
-        msg.set_to(paxos_impl_->GetSelfId());
+        prop_msg.set_logid(paxos_impl_->GetLogId());
+        prop_msg.set_to(paxos_impl_->GetSelfId());
+        prop_msg.set_index(prop_index);
+        prop_msg.set_proposed_num(paxos_impl_->GetProposeNum());
     }
 
-    assert(0 < msg.index());
-    auto ret = Step(msg);
+    assert(0ull < prop_msg.index());
+    auto ret = Step(prop_msg);
     if (ErrorCode::OK != ret) {
-        logerr("Step ret %d", ret);
+        logerr("Step selfid %" PRIu64 " index %" PRIu64 " ret %d", 
+                prop_msg.to(), prop_msg.index(), ret);
         return std::make_tuple(ret, 0ull);
     }
 
-    return std::make_tuple(paxos::ErrorCode::OK, msg.index());
+    return std::make_tuple(paxos::ErrorCode::OK, prop_msg.index());
 }
 
 paxos::ErrorCode Paxos::Step(const Message& msg)
@@ -107,9 +88,6 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
     uint64_t prev_commit_index = 0;
     std::unique_ptr<HardState> hs;
     std::vector<std::unique_ptr<Message>> vec_msg;
-
-    // TODO: chosen_ins cache
-    std::unique_ptr<PaxosInstance> chosen_ins;
 
     uint64_t index = msg.index();
     hassert(0 < index, "index %" PRIu64 " type %d peer %" 
@@ -213,6 +191,45 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
     return paxos::ErrorCode::OK;
 }
 
+paxos::ErrorCode Paxos::CheckAndFixTimeout(
+        const std::chrono::milliseconds& timeout)
+{
+    Message check_msg;
+    check_msg.set_type(MessageType::TRY_PROP);
+
+    std::lock_guard<std::mutex> prop_lock(prop_mutex_);
+    {
+        std::lock_guard<std::mutex> lock(paxos_mutex_);
+        auto prop_index = paxos_impl_->NextProposingIndex();
+        if (0ull != prop_index) {
+            return ErrorCode::OK; // do nothing
+        }
+
+        assert(0ull == prop_index);
+        auto check_index = paxos_impl_->GetMaxIndex();
+        auto ins = paxos_impl_->GetInstance(check_index, false);
+        assert(nullptr != ins);
+        if (!ins->IsTimeout(timeout)) {
+            return ErrorCode::OK; // not yet timeout
+        }
+
+        // timeout
+        check_msg.set_logid(paxos_impl_->GetLogId());
+        check_msg.set_to(paxos_impl_->GetSelfId());
+        check_msg.set_index(prop_index);
+        check_msg.set_proposed_num(paxos_impl_->GetProposeNum());
+    }
+
+    assert(0ull < check_msg.index());
+    auto ret = Step(check_msg);
+    if (ErrorCode::OK != ret) {
+        logerr("Step selfid %" PRIu64 " index %" PRIu64 " ret %d", 
+                check_msg.to(), check_msg.index(), ret);
+    }
+
+    return ret;
+}
+
 std::tuple<
 paxos::ErrorCode, uint64_t, std::unique_ptr<HardState>> Paxos::Get(uint64_t index)
 {
@@ -246,8 +263,7 @@ paxos::ErrorCode, uint64_t, std::unique_ptr<HardState>> Paxos::Get(uint64_t inde
 std::tuple<paxos::ErrorCode, uint64_t> 
 Paxos::TrySet(uint64_t index, gsl::cstring_view<> proposing_value)
 {
-    // set exclude == true;
-    return Propose(index, proposing_value, true);    
+    return Propose(index, proposing_value);
 }
 
 void Paxos::Wait(uint64_t index)
@@ -316,7 +332,6 @@ Paxos::GetAllTimeoutIndex(const std::chrono::milliseconds timeout)
 {
     std::lock_guard<std::mutex> lock(paxos_mutex_);
     return paxos_impl_->GetAllTimeoutIndex(timeout);
-    // TODO
 }
 
 } // namespace paxos

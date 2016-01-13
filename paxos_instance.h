@@ -53,8 +53,9 @@ public:
     PropState beginPreparePhase();
     PropState beginAcceptPhase();
 
+    PropState stepTryPropose(uint64_t hint_proposed_num);
+
     PropState stepBeginPropose(
-            bool force, 
             uint64_t hint_proposed_num, 
             const std::string& proposing_value);
 

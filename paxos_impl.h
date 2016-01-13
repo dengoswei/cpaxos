@@ -58,13 +58,6 @@ public:
     PaxosInstance* GetInstance(uint64_t index, bool create);
     void CommitStep(uint64_t index, uint32_t store_seq);
 
-    // hs seq id, rsp msg
-    std::vector<std::unique_ptr<Message>>
-    ProduceRsp(
-            const PaxosInstance* ins, 
-            const Message& req_msg, 
-            MessageType rsp_msg_type);
-
     // msg, accepted_value
     std::tuple<std::string, std::string> GetInfo(uint64_t index) const;
 
@@ -76,6 +69,10 @@ public:
     }
 
     bool CanFastProp(uint64_t prop_index);
+
+    uint64_t GetProposeNum() const {
+        return prop_num_gen_.Get();
+    }
 
 private:
 //    Drop mutex protect

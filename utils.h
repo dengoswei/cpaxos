@@ -81,39 +81,33 @@ public:
         return prop_num_compose(selfid_, prop_cnt_);
     }
 
-    bool Update(uint64_t prop_num) {
+    // after update: Get() >= prop_num
+    bool Update(uint64_t prop_num) 
+    {
         uint8_t id = 0;
-        uint64_t cnt = 0;
-        std::tie(id, cnt) = prop_num_decompose(prop_num);
-        if (id != selfid_ || cnt <= prop_cnt_) {
+        uint64_t cnt = 0ull;
+
+        std::tie(id, cnt) = prop_num_decompose(std::max(prop_num, Get()));
+        if (id == selfid_) {
             return false;
         }
 
-        prop_cnt_ = cnt;
+        assert(prop_cnt_ < cnt + 1ull);
+        prop_cnt_ = cnt + 1ull;
         return true;
     }
 
-    uint64_t Next(uint64_t hint_num)
+    // after update: Get() > hint_num
+    uint64_t Next(uint64_t hint_num) 
     {
-        uint8_t hint_id = 0;
-        uint64_t hint_prop_cnt = 0;
-        std::tie(hint_id, hint_prop_cnt) = prop_num_decompose(hint_num);    
-        
-        uint64_t prev_prop_num = 
-            prop_num_compose(selfid_, prop_cnt_);
-        if (prop_cnt_+1 <= hint_prop_cnt && selfid_ < hint_id) {
-            ++hint_prop_cnt;
+        const auto old_prop_cnt = prop_cnt_;
+        Update(hint_num);
+        assert(old_prop_cnt <= prop_cnt_);
+        if (old_prop_cnt == prop_cnt_) {
+            ++prop_cnt_;
         }
 
-        ++prop_cnt_;
-        prop_cnt_ = std::max(prop_cnt_, hint_prop_cnt);
-        uint64_t next_prop_num = 
-            prop_num_compose(selfid_, prop_cnt_);
-        hassert(prev_prop_num < next_prop_num, 
-                "%" PRIu64 " %" PRIu64, prev_prop_num, next_prop_num);
-        hassert(next_prop_num >= hint_num, 
-                "%" PRIu64 " %" PRIu64, next_prop_num, hint_num);
-        return next_prop_num;
+        return Get(); 
     }
 
     bool IsLocalNum(uint64_t prop_num) const {

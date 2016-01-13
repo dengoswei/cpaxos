@@ -44,10 +44,11 @@ public:
     ~Paxos();
 
     std::tuple<paxos::ErrorCode, uint64_t>
-        Propose(uint64_t index, 
-                gsl::cstring_view<> proposing_value, bool exclude);
+        Propose(uint64_t index, gsl::cstring_view<> proposing_value);
 
     paxos::ErrorCode Step(const Message& msg);
+
+    paxos::ErrorCode CheckAndFixTimeout(const std::chrono::milliseconds& timeout);
 
     std::tuple<paxos::ErrorCode, uint64_t, std::unique_ptr<HardState>> Get(uint64_t index);
     std::tuple<paxos::ErrorCode, uint64_t> TrySet(
@@ -70,6 +71,7 @@ public:
     std::tuple<std::string, std::string> GetInfo(uint64_t index);
 
 private:
+    std::mutex prop_mutex_;
     std::mutex paxos_mutex_;
     std::condition_variable paxos_cv_;
     std::unique_ptr<PaxosImpl> paxos_impl_;

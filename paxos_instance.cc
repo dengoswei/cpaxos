@@ -128,88 +128,50 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
         break;
     case MessageType::ACCPT:
     case MessageType::FAST_ACCPT:
-    {
-        bool fast_accept = MessageType::FAST_ACCPT == msg.type();
-        updateAccepted(
-                msg.proposed_num(), msg.accepted_value(), fast_accept);
-        rsp_msg_type = fast_accept ? 
-            MessageType::FAST_ACCPT_RSP : MessageType::ACCPT_RSP;
-    }
+        {
+            bool fast_accept = MessageType::FAST_ACCPT == msg.type();
+            updateAccepted(
+                    msg.proposed_num(), msg.accepted_value(), fast_accept);
+            rsp_msg_type = fast_accept ? 
+                MessageType::FAST_ACCPT_RSP : MessageType::ACCPT_RSP;
+        }
         break;
 
     case MessageType::CHOSEN:
         {
+            assert(PropState::CHOSEN != getPropState());
             if (msg.accepted_num() == accepted_num_) {
                 // mark as chosen
                 rsp_msg_type = updatePropState(PropState::CHOSEN);
                 break;
             }
 
-            assert(false == msg.accepted_value().empty());
-
-            // reset
-            if (prop_num_gen_.Get() < promised_num_) {
-                uint64_t prev_prop_num = prop_num_gen_.Get();
-                prop_num_gen_.Next(promised_num_);
-                assert(prev_prop_num < prop_num_gen_.Get());
-            }
+            auto max_prop_num = max(prop_num_gen_.Get(), getPromisedNum());
+            max_prop_num = max(max_prop_num, msg.proposed_num());
+            prop_num_gen_.Update(max_prop_num);
 
             // self promised
             assert(false == updatePromised(prop_num_gen_.Get()));
             // self accepted
             assert(false == updateAccepted(
-                        prop_num_gen_.Get(), 
-                        msg.accepted_value(), false));
+                        prop_num_gen_.Get(), msg.accepted_value(), false));
+            clearStrictPropFlag();
             updatePropState(PropState::CHOSEN);
+            assert(prop_num_gen_.Get() > msg.proposed_num());
+            assert(getProposeNum() == getPromisedNum());
+            assert(getProposeNum() == getAcceptedNum());
+            assert(false == getStrictPropFlag());
+            assert(0 != getPendingSeq());
         }
         break;
 
     // propose
     case MessageType::BEGIN_PROP:
         {
-            if (PropState::NIL != prop_state_) {
-                logerr("msgtype::BEGIN_PROP but instance in stat %d", 
-                        static_cast<int>(prop_state_));
-                break;
-            }
-
-            assert(PropState::NIL == prop_state_);
-            if (0ull == getPromisedNum()) {
-                assert(0ull == getAcceptedNum());
-                setStrictPropFlag(); // mark as strict prop
-            }
-
-            auto next_prop_state = stepBeginPropose(
-                    false, msg.proposed_num(), msg.accepted_value());
-            assert(PropState::PREPARE == next_prop_state);
-            rsp_msg_type = updatePropState(next_prop_state);
-            assert(PropState::WAIT_PREPARE == prop_state_);
-        }
-        break;
-    case MessageType::TRY_PROP:
-        {
-            if (ACTIVE_TIME_OUT > 
-                    chrono::duration_cast<chrono::milliseconds>(
-                        chrono::system_clock::now() - 
-                        active_proposer_time_)) {
-                // no yet timeout => do nothing
-                break;
-            }
-
-            // enable: try_prop_
-            auto next_prop_state = stepBeginPropose(
-                    true, msg.proposed_num(), msg.accepted_value());
-            assert(PropState::PREPARE == next_prop_state);
-            rsp_msg_type = updatePropState(next_prop_state);
-            assert(PropState::WAIT_PREPARE == prop_state_);
-        }
-        break;
-
-    case MessageType::BEGIN_FAST_PROP:
-        {
-            if (PropState::NIL != prop_state_) {
-                logerr("msgtype::BEGIN_FAST_PROP but instance in state %d", 
-                        static_cast<int>(prop_state_));
+            if (0ull != getPromisedNum()) {
+                logerr("CONFLICT selfid %" PRIu64 " index %" PRIu64 
+                        " promised_num %" PRIu64, 
+                        msg.to(), msg.index(), getPromisedNum());
                 break;
             }
 
@@ -217,20 +179,56 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             assert(0ull == getPromisedNum());
             assert(0ull == getAcceptedNum());
             setStrictPropFlag(); // mark as strict prop
-            // => skip prepare phase => go directly to accept phase
 
-            auto new_state = 
-                stepBeginPropose(false, 0ull, msg.accepted_value());
-            assert(PropState::PREPARE == new_state);
-            prop_state_ = new_state;
+            auto next_prop_state = 
+                stepBeginPropose(msg.proposed_num(), msg.accepted_value());
+            assert(PropState::PREPARE == next_prop_state);
+            rsp_msg_type = updatePropState(next_prop_state);
+            assert(MessageType::PROP == rsp_msg_type);
+            assert(getProposeNum() == getPromisedNum());
+            assert(0ull == getAcceptedNum());
+            assert(true == getStrictPropFlag());
+            assert(0 != getPendingSeq());
+        }
+        break;
+    case MessageType::TRY_PROP:
+        {
+            auto next_prop_state = stepTryPropose(msg.proposed_num());
+            assert(PropState::PREPARE == next_prop_state);
+            rsp_msg_type = updatePropState(next_prop_state);
+            assert(PropState::WAIT_PREPARE == prop_state_);
+        }
+        break;
+    case MessageType::BEGIN_FAST_PROP:
+        {
+            if (0ull != getPromisedNum()) {
+                logerr("CONFLICT selfid %" PRIu64 " index %" PRIu64
+                        " promised_num %" PRIu64, 
+                        msg.to(), msg.index(), getPromisedNum());
+                break;
+            }
 
-            new_state = beginPreparePhase();
-            assert(PropState::WAIT_PREPARE == new_state);
-            updatePropState(new_state);
+            assert(PropState::NIL == prop_state_);
+            assert(0ull == getPromisedNum());
+            assert(0ull == getAcceptedNum());
+            setStrictPropFlag(); // mark as strict prop
 
+            // => skip prepare phase 
+            auto next_prop_state = 
+                stepBeginPropose(msg.proposed_num(), msg.accepted_value());
+            assert(PropState::PREPARE == next_prop_state);
+            rsp_msg_type = updatePropState(next_prop_state);
+            assert(MessageType::PROP == rsp_msg_type);
+
+            // => jump into accept phase(so call fast prop)
+            assert(0ull == getAcceptedNum());
             rsp_msg_type = updatePropState(PropState::ACCEPT);
             assert(MessageType::ACCPT == rsp_msg_type);
-            assert(PropState::WAIT_ACCEPT == prop_state_); 
+            assert(getProposeNum() == getPromisedNum());
+            assert(getProposeNum() == getAcceptedNum());
+            // assert(proposing_value_ == getAcceptedValue());
+            assert(true == getStrictPropFlag());
+            assert(0 != getPendingSeq());
             // set rsp_msg_type as fast_accpt
             rsp_msg_type = MessageType::FAST_ACCPT;
         }
@@ -257,8 +255,11 @@ PaxosInstanceImpl::updatePropState(PropState next_prop_state)
         break;
     case PropState::PREPARE:
         {
-            prop_num_gen_.Next(promised_num_);
-            assert(prop_num_gen_.Get() >= promised_num_);
+            // keep prop_num_gen_ if first time try prepare;
+            if (0ull != promised_num_) {
+                prop_num_gen_.Next(promised_num_);
+            }
+            assert(prop_num_gen_.Get() > promised_num_);
             auto new_state = beginPreparePhase();
             assert(PropState::WAIT_PREPARE == new_state);
 
@@ -293,18 +294,25 @@ PaxosInstanceImpl::updatePropState(PropState next_prop_state)
     return rsp_msg_type;
 }
 
+PropState PaxosInstanceImpl::stepTryPropose(uint64_t hint_proposed_num)
+{
+    prop_state_ = PropState::PREPARE; // force reset stat
+    // don't touch proposing_value;
+
+    prop_num_gen_.Update(hint_proposed_num);
+    return PropState::PREPARE;
+}
+
 PropState PaxosInstanceImpl::stepBeginPropose(
-        bool force, 
         uint64_t hint_proposed_num, 
         const std::string& proposing_value)
 {
-    assert(false == force || PropState::NIL == prop_state_);
+    assert(PropState::NIL == prop_state_);
+    assert(0ull == promised_num_);
 
     prop_state_ = PropState::PREPARE;
     proposing_value_ = proposing_value;
-
-    promised_num_ = max(promised_num_, hint_proposed_num);
-    setPendingSeq();
+    prop_num_gen_.Update(hint_proposed_num);
     return PropState::PREPARE;
 }
 
@@ -319,7 +327,10 @@ PropState PaxosInstanceImpl::beginPreparePhase()
     assert(false == reject);
     if (max_accepted_hint_num_ < accepted_num_) {
         max_accepted_hint_num_ = accepted_num_;
-        // proposing_value_ = accepted_value_;
+        if (!prop_num_gen_.IsLocalNum(accepted_num_)) {
+            proposing_value_ = accepted_value_;
+            clearStrictPropFlag();
+        }
     }
 
     // ignore rsp_votes_[self_id_]
@@ -395,22 +406,9 @@ PropState PaxosInstanceImpl::stepAcceptRsp(
     assert(0 < major_cnt_);
     assert(PropState::WAIT_ACCEPT == prop_state_);
     uint64_t max_proposed_num = prop_num_gen_.Get();
-    if (true == fast_accept_rsp) {
-        logdebug("FAST INFO prop_num %" PRIu64 
-                " max_proposed_num %" PRIu64, 
-                prop_num, max_proposed_num);
-    }
     if (prop_num != max_proposed_num) {
         // ignore: prop num mis-match
         return PropState::WAIT_ACCEPT;
-    }
-
-    if (true == fast_accept_rsp) {
-        logdebug("FAST INFO prop_num %" PRIu64 
-                " peer_id %" PRIu64 " peer_accepted_num %" PRIu64
-                " prop_state %d", 
-                prop_num, peer_id, peer_accepted_num, 
-                static_cast<int>(prop_state_));
     }
 
     updateRspVotes(
@@ -419,7 +417,6 @@ PropState PaxosInstanceImpl::stepAcceptRsp(
                 max_proposed_num == peer_accepted_num : 
                 max_proposed_num >= peer_accepted_num, 
             rsp_votes_);
-//            max_proposed_num >= peer_accepted_num, rsp_votes_);
 
     int accept_cnt = 0;
     int reject_cnt = 0;
