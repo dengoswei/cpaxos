@@ -82,19 +82,9 @@ Paxos::Propose(const uint64_t index,
             msg.set_type(MessageType::TRY_PROP);
         }
 
-        if (MessageType::BEGIN_PROP == msg.type() && 
-                1ull < msg.index()) {
-            // normal propose => possible to do fast prop ?
-            // check previous paxos instance => is StrictPropFlag on ?
-
-            auto prev_ins = 
-                paxos_impl_->GetInstance(msg.index() - 1ull, false);
-            assert(nullptr != prev_ins);
-            assert(true == prev_ins->IsChosen());
-            if (true == prev_ins->GetStrictPropFlag()) {
-                // try fast prop
-                msg.set_type(MessageType::BEGIN_FAST_PROP);
-            }
+        if (paxos_impl_->CanFastProp(msg.index())) {
+            assert(MessageType::BEGIN_PROP == msg.type());
+            msg.set_type(MessageType::BEGIN_FAST_PROP);
         }
 
         msg.set_logid(paxos_impl_->GetLogId());
@@ -134,38 +124,48 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
         assert(msg.logid() == paxos_impl_->GetLogId());
         prev_commit_index = paxos_impl_->GetCommitedIndex();
 
-        PaxosInstance* ins = paxos_impl_->GetInstance(index, true);
-        if (nullptr == ins) {
-            assert(true == paxos_impl_->IsChosen(index));
-            
-            lock.unlock();
-            // construct a chosen paxos instance
-            auto chosen_hs = callback_.read(msg.logid(), index);
-            if (nullptr == chosen_hs) {
-                logerr("callback_.read index %" PRIu64 " nullptr", index);
-                return paxos::ErrorCode::STORAGE_READ_ERROR;
+        unique_ptr<PaxosInstance> disk_ins = nullptr;
+        if (index < paxos_impl_->GetCommitedIndex()) {
+            auto ins = paxos_impl_->GetInstance(index, false);
+            if (nullptr == ins) {
+                // re-construct disk_ins
+                auto group_size = paxos_impl_->GetGroupIds().size();
+                lock.unlock();
+                auto chosen_hs = callback_.read(msg.logid(), index);
+                if (nullptr == chosen_hs) {
+                    logerr("read index %" PRIu64 " nullptr", index);
+                    return paxos::ErrorCode::STORAGE_READ_ERROR;
+                }
+
+                disk_ins = make_unique<PaxosInstance>(
+                        group_size / 2 + 1, 
+                        chosen_hs->proposed_num(), 
+                        chosen_hs->promised_num(), 
+                        chosen_hs->accepted_num(), 
+                        chosen_hs->accepted_value(), 
+                        PropState::CHOSEN, 
+                        chosen_hs->seq());
+                assert(nullptr != disk_ins);
+                lock.lock();
             }
-
-            lock.lock();
-            assert(index == chosen_hs->index());
-            chosen_ins = 
-                paxos_impl_->BuildPaxosInstance(
-                        *chosen_hs, PropState::CHOSEN);
-            assert(nullptr != chosen_ins);
-
-            ins = chosen_ins.get();
-            assert(static_cast<int>(PropState::CHOSEN) == ins->GetState());
         }
 
-        auto rsp_msg_type = ins->Step(msg);
-        vec_msg = paxos_impl_->ProduceRsp(ins, msg, rsp_msg_type);
-        hs = ins->GetPendingHardState(paxos_impl_->GetLogId(), index);
+        auto rsp_msg_type = 
+            ::paxos::Step(*paxos_impl_, msg, disk_ins.get());
+        vec_msg = ProduceRsp(
+                *paxos_impl_, msg, rsp_msg_type, disk_ins.get());
+        if (nullptr == disk_ins.get()) {
+            auto ins = paxos_impl_->GetInstance(index, false);
+            assert(nullptr != ins);
+            hs = ins->GetPendingHardState(paxos_impl_->GetLogId(), index);
+        }
     }
 
     // 2.
     int ret = 0;
+    uint64_t store_seq = nullptr == hs ? 0ull : hs->seq();
     if (nullptr != hs) {
-        ret = callback_.write(*hs); 
+        ret = callback_.write(move(hs)); 
         if (0 != ret) {
             logdebug("callback_.write index %" PRIu64 " ret %d", 
                     hs->index(), ret);
@@ -184,7 +184,8 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
             if (0 != ret) {
                 logdebug("callback_.send index %" PRIu64 
                         " msg type %d ret %d", 
-                        msg.index(), static_cast<int>(rsp_msg_type), ret);
+                        msg.index(), 
+                        static_cast<int>(rsp_msg_type), ret);
             }
             assert(nullptr == rsp_msg);
         }
@@ -194,14 +195,14 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
 
     bool update = false;
     {
-        uint64_t store_seq = nullptr == hs ? 0ull : hs->seq();
         std::lock_guard<std::mutex> lock(paxos_mutex_);
         paxos_impl_->CommitStep(index, store_seq);
         if (prev_commit_index < paxos_impl_->GetCommitedIndex()) {
             update = true;
         }
         logdebug("selfid %" PRIu64 " commited_index_ %" PRIu64 "\n", 
-               paxos_impl_->GetSelfId(), paxos_impl_->GetCommitedIndex());
+               paxos_impl_->GetSelfId(), 
+               paxos_impl_->GetCommitedIndex());
     }
 
     // TODO: after the lock_guard destructor

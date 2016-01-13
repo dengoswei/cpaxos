@@ -26,7 +26,7 @@ std::unique_ptr<HardState>
 struct PaxosCallBack {
 
     std::function<std::unique_ptr<HardState>(uint64_t, uint64_t)> read;
-    std::function<int(const HardState&)> write;
+    std::function<int(std::unique_ptr<HardState>)> write;
 
     std::function<int(std::unique_ptr<Message>)> send;
 };

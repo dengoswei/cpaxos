@@ -116,8 +116,10 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
                     msg.proposed_num(), msg.from(), msg.accepted_num(), 
                     MessageType::FAST_ACCPT_RSP == msg.type());
             rsp_msg_type = updatePropState(next_prop_state);
-            logdebug("%s rsp_msg_type %d\n", 
-                    __func__, static_cast<int>(rsp_msg_type));
+            logdebug("%s next_prop_state %d rsp_msg_type %d", 
+                    __func__, 
+                    static_cast<int>(next_prop_state), 
+                    static_cast<int>(rsp_msg_type));
         }
         break;
     case MessageType::PROP:
@@ -156,7 +158,8 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             assert(false == updatePromised(prop_num_gen_.Get()));
             // self accepted
             assert(false == updateAccepted(
-                        prop_num_gen_.Get(), msg.accepted_value(), false));
+                        prop_num_gen_.Get(), 
+                        msg.accepted_value(), false));
             updatePropState(PropState::CHOSEN);
         }
         break;
@@ -171,7 +174,7 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             }
 
             assert(PropState::NIL == prop_state_);
-            if (0ull == getProposeNum()) {
+            if (0ull == getPromisedNum()) {
                 assert(0ull == getAcceptedNum());
                 setStrictPropFlag(); // mark as strict prop
             }
@@ -225,10 +228,10 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             assert(PropState::WAIT_PREPARE == new_state);
             updatePropState(new_state);
 
-            new_state = beginAcceptPhase();
-            assert(PropState::WAIT_ACCEPT == new_state);
-            updatePropState(new_state);
+            rsp_msg_type = updatePropState(PropState::ACCEPT);
+            assert(MessageType::ACCPT == rsp_msg_type);
             assert(PropState::WAIT_ACCEPT == prop_state_); 
+            // set rsp_msg_type as fast_accpt
             rsp_msg_type = MessageType::FAST_ACCPT;
         }
         break;
@@ -392,9 +395,22 @@ PropState PaxosInstanceImpl::stepAcceptRsp(
     assert(0 < major_cnt_);
     assert(PropState::WAIT_ACCEPT == prop_state_);
     uint64_t max_proposed_num = prop_num_gen_.Get();
+    if (true == fast_accept_rsp) {
+        logdebug("FAST INFO prop_num %" PRIu64 
+                " max_proposed_num %" PRIu64, 
+                prop_num, max_proposed_num);
+    }
     if (prop_num != max_proposed_num) {
         // ignore: prop num mis-match
         return PropState::WAIT_ACCEPT;
+    }
+
+    if (true == fast_accept_rsp) {
+        logdebug("FAST INFO prop_num %" PRIu64 
+                " peer_id %" PRIu64 " peer_accepted_num %" PRIu64
+                " prop_state %d", 
+                prop_num, peer_id, peer_accepted_num, 
+                static_cast<int>(prop_state_));
     }
 
     updateRspVotes(

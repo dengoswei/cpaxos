@@ -38,6 +38,9 @@ public:
     uint64_t GetNextCommitedIndex() const { return next_commited_index_; }
     uint64_t GetSelfId() const { return selfid_; }
     uint64_t GetLogId() const { return logid_; }
+    const std::set<uint64_t>& GetGroupIds() const {
+        return group_ids_;
+    }
 
     uint64_t NextProposingIndex();
     std::unique_ptr<PaxosInstance> BuildNewPaxosInstance();
@@ -49,14 +52,13 @@ public:
         return index <= commited_index_;
     }
 
-    void TryUpdateNextCommitedIndex();
+    bool UpdateNextCommitedIndex(uint64_t chosen_index);
 
     // may craete a new instance
     PaxosInstance* GetInstance(uint64_t index, bool create);
-    void CommitStep(uint64_t index, uint64_t store_seq);
+    void CommitStep(uint64_t index, uint32_t store_seq);
 
     // hs seq id, rsp msg
-//    std::unique_ptr<Message>
     std::vector<std::unique_ptr<Message>>
     ProduceRsp(
             const PaxosInstance* ins, 
@@ -72,6 +74,8 @@ public:
     bool UpdatePropNumGen(const uint64_t prop_num) {
         return prop_num_gen_.Update(prop_num);
     }
+
+    bool CanFastProp(uint64_t prop_index);
 
 private:
 //    Drop mutex protect
@@ -92,6 +96,18 @@ private:
     std::map<uint64_t, std::unique_ptr<PaxosInstance>> ins_map_;
 };
 
+
+MessageType Step(
+        PaxosImpl& paxos_impl, 
+        const Message& req_msg, 
+        PaxosInstance* disk_ins);
+
+std::vector<std::unique_ptr<Message>>
+ProduceRsp(
+        PaxosImpl& paxos_impl, 
+        const Message& req_msg, 
+        MessageType rsp_msg_type, 
+        PaxosInstance* disk_ins);
 
 } // namespace paxos
 

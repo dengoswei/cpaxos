@@ -45,7 +45,9 @@ public:
     uint64_t getProposeNum() const { return prop_num_gen_.Get(); }
     uint64_t getPromisedNum() const { return promised_num_; }
     uint64_t getAcceptedNum() const { return accepted_num_; }
-    const std::string& getAcceptedValue() const { return accepted_value_; }
+    const std::string& getAcceptedValue() const { 
+        return accepted_value_; 
+    }
 
     // proposer
     PropState beginPreparePhase();
@@ -152,8 +154,8 @@ public:
 
     MessageType Step(const Message& msg);
 
-    int GetState() const { 
-        return static_cast<int>(ins_impl_.getPropState()); 
+    PropState GetPropState() const { 
+        return ins_impl_.getPropState();
     }
 
     uint64_t GetProposeNum() const { return ins_impl_.getProposeNum(); }

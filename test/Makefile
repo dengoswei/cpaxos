@@ -1,10 +1,10 @@
 
 CPPFLAGS += -isystem $(GTEST_DIR)/include -std=c++14 -stdlib=libc++
-CXXFLAGS += -g -Wall -Wextra
+CXXFLAGS += -g -Wall -Wextra -D TEST_DEBUG
 
 
-
-TESTS = utils_test paxos_instance_test paxos_test paxos_pb_test config_test glog_test
+TESTS = utils_test paxos_instance_test paxos_test paxos_pb_test \
+		config_test glog_test paxos_impl_test
 
 INCLS += -I../ -I../cpaxospb
 INCLS += -I/Users/dengoswei/open-src/github.com/microsoft/GSL/include
@@ -56,6 +56,10 @@ utils_test: utils_test.o gtest_main.a
 	$(BUILDEXE)
 
 paxos_instance_test: paxos_instance_test.o ../paxos_instance.o ../cpaxospb/paxos.pb.o gtest_main.a
+	$(BUILDEXE)
+
+paxos_impl_test: paxos_impl_test.o test_helper.o \
+	../paxos_instance.o ../paxos_impl.o ../cpaxospb/paxos.pb.o gtest_main.a
 	$(BUILDEXE)
 
 paxos_test: paxos_test.o ../paxos_instance.o ../paxos_impl.o ../paxos.o ../cpaxospb/paxos.pb.o gtest_main.a
