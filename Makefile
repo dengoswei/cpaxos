@@ -5,7 +5,7 @@ CXXFLAGS += -g -Wall -Wextra # -D TEST_DEBUG
 TESTS = utils_test paxos_instance_test paxos_test paxos_pb_test config_test glog_test
 
 INCLS += -I./cpaxospb/
-INCLS += -I/Users/dengoswei/open-src/github.com/microsoft/GSL/include
+// INCLS += -I/Users/dengoswei/open-src/github.com/microsoft/GSL/include
 INCLS += -I/Users/dengoswei/project/include
 LINKS += -L/Users/dengoswei/project/lib
 LINKS += -lpthread -lprotobuf

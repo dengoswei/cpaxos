@@ -7,7 +7,6 @@
 #include <functional>
 #include <chrono>
 #include <stdint.h>
-#include "gsl.h"
 #include "utils.h"
 #include "paxos_instance.h"
 #include "paxos_impl.h"
@@ -44,7 +43,7 @@ public:
     ~Paxos();
 
     std::tuple<paxos::ErrorCode, uint64_t>
-        Propose(uint64_t index, gsl::cstring_view<> proposing_value);
+        Propose(uint64_t index, const std::string& proposing_value);
 
     paxos::ErrorCode Step(const Message& msg);
 
@@ -52,7 +51,7 @@ public:
 
     std::tuple<paxos::ErrorCode, uint64_t, std::unique_ptr<HardState>> Get(uint64_t index);
     std::tuple<paxos::ErrorCode, uint64_t> TrySet(
-            uint64_t index, gsl::cstring_view<> proposing_value);
+            uint64_t index, const std::string& proposing_value);
 
     void Wait(uint64_t index);
     bool WaitFor(uint64_t index, const std::chrono::milliseconds timeout);

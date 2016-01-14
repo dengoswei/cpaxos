@@ -44,12 +44,11 @@ Paxos::Paxos(
 Paxos::~Paxos() = default;
 
 std::tuple<paxos::ErrorCode, uint64_t>
-Paxos::Propose(const uint64_t index, gsl::cstring_view<> proposing_value)
+Paxos::Propose(const uint64_t index, const std::string& proposing_value)
 {
     Message prop_msg;
     prop_msg.set_type(MessageType::BEGIN_PROP);
-    prop_msg.set_accepted_value(
-            std::string{proposing_value.data(), proposing_value.size()});
+    prop_msg.set_accepted_value(proposing_value);
 
     std::lock_guard<std::mutex> prop_lock(prop_mutex_);
     {
@@ -261,7 +260,7 @@ paxos::ErrorCode, uint64_t, std::unique_ptr<HardState>> Paxos::Get(uint64_t inde
 }
 
 std::tuple<paxos::ErrorCode, uint64_t> 
-Paxos::TrySet(uint64_t index, gsl::cstring_view<> proposing_value)
+Paxos::TrySet(uint64_t index, const std::string& proposing_value)
 {
     return Propose(index, proposing_value);
 }

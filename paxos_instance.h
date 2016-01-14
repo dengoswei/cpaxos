@@ -6,7 +6,6 @@
 #include <chrono>
 #include "utils.h"
 #include "paxos.pb.h"
-#include "gsl.h"
 
 // public
 namespace paxos {
