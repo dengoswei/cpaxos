@@ -43,7 +43,7 @@ public:
     }
 
     uint64_t NextProposingIndex();
-    std::unique_ptr<PaxosInstance> BuildNewPaxosInstance();
+    
     std::unique_ptr<PaxosInstance> 
         BuildPaxosInstance(const HardState& hs, PropState prop_state);
 
@@ -58,21 +58,8 @@ public:
     PaxosInstance* GetInstance(uint64_t index, bool create);
     void CommitStep(uint64_t index, uint32_t store_seq);
 
-    // msg, accepted_value
-    std::tuple<std::string, std::string> GetInfo(uint64_t index) const;
-
-    std::set<uint64_t> GetAllTimeoutIndex(
-            const std::chrono::milliseconds timeout);
-
-    bool UpdatePropNumGen(const uint64_t prop_num) {
-        return prop_num_gen_.Update(prop_num);
-    }
-
     bool CanFastProp(uint64_t prop_index);
 
-    uint64_t GetProposeNum() const {
-        return prop_num_gen_.Get();
-    }
 
 private:
 //    Drop mutex protect
@@ -84,8 +71,6 @@ private:
     uint64_t max_index_ = 0;
     uint64_t commited_index_ = 0;
     uint64_t next_commited_index_ = 0;
-    paxos::PropNumGen prop_num_gen_;
-    // uint64_t proposing_index_ = 0;
 
     uint64_t store_seq_ = 0;
 

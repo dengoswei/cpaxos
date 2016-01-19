@@ -1,178 +1,123 @@
-#include <iostream>
-#include "utils.h"
-#include "paxos.h"
-#include "paxos_instance.h"
 #include "gtest/gtest.h"
 #include "paxos.pb.h"
+#include "test_helper.h"
+#include "paxos.h"
 
 
-using namespace paxos;
 using namespace std;
+using namespace paxos;
+using namespace test;
 
+TEST(PaxosTest, SimpleConstruct)
+{
+    auto logid = LOGID;
+    auto group_ids = GROUP_IDS;
 
-class PaxosTest : public ::testing::Test {
+    auto selfid = 1ull;
+    assert(group_ids.end() != group_ids.find(selfid));
 
-protected:
-    virtual void SetUp() override 
+    SendHelper sender{0};
+    map<uint64_t, unique_ptr<StorageHelper>> map_storage;
+    map<uint64_t, unique_ptr<Paxos>> map_paxos;
+
+    tie(map_storage, map_paxos) = 
+        build_paxos(logid, group_ids, sender, 0);
+    assert(map_paxos.size() == group_ids.size());
+    assert(map_storage.size() == group_ids.size());
+
+    auto& paxos = map_paxos[selfid];
+    assert(nullptr != paxos);
+    assert(0ull == paxos->GetCommitedIndex());
+    assert(0ull == paxos->GetMaxIndex());
+}
+
+TEST(PaxosTest, SimplePropose)
+{
+    auto logid = LOGID;
+    auto group_ids = GROUP_IDS;
+
+    auto selfid = 1ull;
+    assert(group_ids.end() != group_ids.find(selfid));
+
+    SendHelper sender{0};
+    map<uint64_t, unique_ptr<StorageHelper>> map_storage;
+    map<uint64_t, unique_ptr<Paxos>> map_paxos;
+
+    tie(map_storage, map_paxos) = 
+        build_paxos(logid, group_ids, sender, 0);
+    assert(map_paxos.size() == group_ids.size());
+    assert(map_storage.size() == group_ids.size());
+
+    auto& paxos = map_paxos[selfid];
+    assert(nullptr != paxos);
+
+    string prop_value;
     {
-        for (uint64_t id = 1; id <= 3; ++id)
+        auto prop_msg = buildMsgProp(logid, selfid, 1ull);
+        assert(nullptr != prop_msg);
+        prop_value = prop_msg->accepted_value();
+    }
+
+    auto err = paxos::ErrorCode::OK;
+    auto prop_index = 0ull;
+    tie(err, prop_index) = paxos->Propose(0ull, prop_value);
+    assert(paxos::ErrorCode::OK == err);
+    assert(0ull < prop_index);
+
+    // msg prop
+    assert(false == sender.empty());
+    auto apply_count = sender.apply(map_paxos);
+    assert(size_t{2} == apply_count);
+
+    // msg prop rsp
+    assert(false == sender.empty());
+    apply_count = sender.apply(map_paxos);
+    assert(size_t{2} == apply_count);
+
+    // msg accpt
+    assert(false == sender.empty());
+    apply_count = sender.apply(map_paxos);
+    assert(size_t{2} == apply_count);
+
+    // msg accpt rsp
+    assert(false == sender.empty());
+    apply_count = sender.apply(map_paxos);
+    assert(size_t{2} == apply_count);
+
+    // msg chosen
+    assert(false == sender.empty());
+    apply_count = sender.apply(map_paxos);
+    assert(size_t{2} < apply_count);
+
+    // => all mark as chosen now
+    for (auto& id_paxos : map_paxos) {
+        auto& peer_paxos = id_paxos.second;
+        assert(nullptr != peer_paxos);
+
+        assert(prop_index == peer_paxos->GetMaxIndex());
+        assert(prop_index == peer_paxos->GetCommitedIndex());
+        peer_paxos->Wait(prop_index);
+
+        // check value
         {
-            PaxosCallBack callback;
-            callback.read = [](uint64_t /* index */) -> std::unique_ptr<HardState> {
+            auto& storage = map_storage[id_paxos.first];
+            assert(nullptr != storage);
 
-                return nullptr;
-            };
-
-            callback.write = [](const HardState& hs) -> int {
-                logdebug("hs[index %" PRIu64 ", "
-                         "proposed_num %" PRIu64 ", promised_num %" PRIu64
-                         ", accepted_num %" PRIu64 ", accepted_value %s]", 
-                         hs.index(), hs.proposed_num(), 
-                         hs.promised_num(), hs.accepted_num(), 
-                         hs.accepted_value().c_str());
-
-                return 0;
-            };
-
-            std::vector<Message>& vecMsg = paxos_rsp_msg_;
-            callback.send = [&](const Message& rsp_msg) -> int {
-                // fake => rsp nothing
-                logdebug("rsp_msg[type %d, index %" PRIu64 " " 
-                         "prop_num %" PRIu64 ", peer_id %d "
-                         "promised_num %" PRIu64 ", "
-                         "accepted_num %" PRIu64 "accepted_value %s]", 
-                         static_cast<int>(rsp_msg.type()), rsp_msg.index(), 
-                         rsp_msg.proposed_num(), static_cast<int>(rsp_msg.peer_id()), 
-                         rsp_msg.promised_num(), rsp_msg.accepted_num(), 
-                         rsp_msg.accepted_value().c_str());
-
-                // Message msg = *rsp_msg;
-                vecMsg.emplace_back(rsp_msg);
-                // vecMsg.emplace_back(move(msg));
-
-                return 0;
-            };
-
-            paxos_map_.emplace(id, unique_ptr<Paxos>{new Paxos{0, id, 3, callback}});
+            auto hs = storage->read(logid, prop_index);
+            assert(nullptr != hs);
+            assert(prop_index == hs->index());
+            assert(0ull < hs->proposed_num());
+            assert(0ull < hs->promised_num());
+            assert(0ull < hs->accepted_num());
+            assert(prop_value == hs->accepted_value());
+            assert(logid == hs->logid());
+            assert(0 < hs->seq());
         }
     }
-
-protected:
-    std::map<uint64_t, std::unique_ptr<Paxos>> paxos_map_;
-    std::vector<Message> paxos_rsp_msg_;
-    RandomStrGen<10, 40> str_gen_;
-};
-
-
-TEST_F(PaxosTest, SimpleImplPropose)
-{
-    auto proposing_value = str_gen_.Next();
-    Paxos* p = paxos_map_[1ull].get();
-    assert(nullptr != p);
-
-    Paxos* q = paxos_map_[2ull].get();
-    assert(nullptr != q);
-
-    int ret = 0;
-    vector<Message>& vecMsg = paxos_rsp_msg_;
-
-    uint64_t index = 0;
-    tie(ret, index) = p->Propose(index, proposing_value, true);
-    assert(0 == ret);
-    assert(0 < index);
-
-    // q: recv prop req, produce prop_rsp 
-    {
-        Message req_msg = vecMsg.back();
-        vecMsg.clear();
-        assert(MessageType::PROP == req_msg.type());
-        assert(index == req_msg.index());
-        assert(0 == req_msg.to_id());
-
-        req_msg.set_to_id(q->GetSelfId());
-        assert(0 != req_msg.to_id());
-        ret = q->Step(req_msg);
-        // ret = q->Step(req_msg, callback);
-        hassert(0 == ret, "Paxos::Step ret %d", ret);
-    }
-
-    // p: recv prop rsp, produce accpt req
-    {
-        Message req_msg = vecMsg.back();
-        vecMsg.clear();
-        assert(MessageType::PROP_RSP == req_msg.type());
-        assert(index == req_msg.index());
-
-        ret = p->Step(req_msg);
-        // ret = p->Step(req_msg, callback);
-        hassert(0 == ret, "Paxos::Step ret %d", ret);
-    }
-
-    // q: recv accpt req, produce accpt_rsp
-    {
-        Message req_msg = vecMsg.back();
-        vecMsg.clear();
-        assert(MessageType::ACCPT == req_msg.type());
-        assert(index == req_msg.index());
-        assert(0 == req_msg.to_id());
-
-        req_msg.set_to_id(q->GetSelfId());
-        assert(0 != req_msg.to_id());
-
-        ret = q->Step(req_msg);
-        // ret = q->Step(req_msg, callback);
-        hassert(0 == ret, "Paxos::Step ret %d", ret);
-    }
-
-    // p: recv accpt rsp, => chosen
-    {
-        Message req_msg = vecMsg.back();
-        vecMsg.clear();
-        assert(MessageType::ACCPT_RSP == req_msg.type());
-        assert(index == req_msg.index());
-
-        ret = p->Step(req_msg);
-        // ret = p->Step(req_msg, callback);
-        hassert(0 == ret, "Paxos::Step ret %d", ret);
-
-        uint64_t commited_index = p->GetCommitedIndex();
-        assert(commited_index == index);
-    }
-
-    // q: recv chosen req 
-    {
-        Message req_msg = vecMsg.back();
-        vecMsg.clear();
-        assert(MessageType::CHOSEN == req_msg.type());
-        assert(index == req_msg.index());
-        assert(0 == req_msg.to_id());
-
-        req_msg.set_to_id(q->GetSelfId());
-        assert(0 != req_msg.to_id());
-
-        ret = q->Step(req_msg);
-        // ret = q->Step(req_msg, callback);
-        hassert(0 == ret, "Paxos::Step ret %d", ret);
-
-        assert(true == vecMsg.empty());
-        uint64_t commited_index = q->GetCommitedIndex();
-        assert(commited_index == index);
-    }
-
-    {
-        int ret = 0;
-        std::chrono::milliseconds cost{0};
-
-        tie(ret, cost) = measure::execution([](int i) -> int {
-                    for (int j = 0; j < i; ++j) {
-                        usleep((j+1) * 100);
-                    }
-                    return 0;
-                }, 10);
-        cout << ret << " cost time " << cost.count() << endl;
-    }
-
 }
+
+
+
 
 
 

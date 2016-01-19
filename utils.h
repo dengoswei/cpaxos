@@ -130,9 +130,10 @@ class RandomIntGen
 {
 public:
     RandomIntGen()
-        : m_tUDist(iMin, iMax)
+        : m_tMyRNG(std::random_device()())
+        , m_tUDist(iMin, iMax)
     {
-        m_tMyRNG.seed(time(NULL));
+
     }
 
     INTType Next()
@@ -177,6 +178,16 @@ private:
     RandomIntGen<std::mt19937, int, 0, sizeof(DICTIONARY)-2> m_tRIdx;
 };
 
+inline int random_int(int min, int max)
+{
+    // mark as thread local ?
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(min, max);
+    return dis(gen);
+}
+
+
 namespace measure {
 
 template <typename F, typename ...Args>
@@ -185,7 +196,8 @@ execution(F func, Args&&... args) {
     auto start = std::chrono::system_clock::now();
     auto ret = func(std::forward<Args>(args)...);
     auto duration = std::chrono::duration_cast<
-        std::chrono::milliseconds>(std::chrono::system_clock::now() - start);
+        std::chrono::milliseconds>(
+                std::chrono::system_clock::now() - start);
     return std::make_tuple(ret, duration);
 }
 

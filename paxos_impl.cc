@@ -10,7 +10,7 @@ namespace {
 
 using namespace paxos;
 
-const size_t MAX_INS_SIZE = 100; // TODO: config option ?
+const size_t MAX_INS_SIZE = 5; // TODO: config option ?
 
 std::unique_ptr<PaxosInstance> buildPaxosInstance(
         size_t group_size, uint64_t selfid, uint64_t prop_cnt)
@@ -74,7 +74,6 @@ PaxosImpl::PaxosImpl(
     : logid_(logid)
     , selfid_(selfid)
     , group_ids_(group_ids)
-    , prop_num_gen_(static_cast<uint8_t>(selfid_), 0ull)
 {
     assert(0ull < selfid_);
     assert(selfid_ < (1ull << 8));
@@ -90,13 +89,6 @@ uint64_t PaxosImpl::NextProposingIndex()
     }
     
     return max_index_ + 1;
-}
-
-std::unique_ptr<PaxosInstance>
-PaxosImpl::BuildNewPaxosInstance()
-{
-    return buildPaxosInstance(
-            group_ids_.size(), selfid_, prop_num_gen_.Get());
 }
 
 std::unique_ptr<PaxosInstance>
@@ -125,8 +117,7 @@ PaxosInstance* PaxosImpl::GetInstance(uint64_t index, bool create)
 
         // need build a new paxos instance
         auto new_ins = 
-            buildPaxosInstance(
-                    group_ids_.size(), selfid_, prop_num_gen_.Get());
+            buildPaxosInstance(group_ids_.size(), selfid_, 0ull);
         assert(nullptr != new_ins);
         ins_map_[index] = move(new_ins);
         assert(nullptr == new_ins);
@@ -166,26 +157,6 @@ void PaxosImpl::CommitStep(uint64_t index, uint32_t store_seq)
     commited_index_ = next_commited_index_;
 }
 
-std::tuple<std::string, std::string> 
-PaxosImpl::GetInfo(uint64_t index) const
-{
-    assert(0 < index);
-    if (ins_map_.end() == ins_map_.find(index)) {
-        return make_tuple<string, string>("null", "");
-    }
-
-    auto ins = ins_map_.at(index).get();
-    assert(nullptr != ins);
-
-    stringstream ss;
-    ss << "LogId " << logid_ 
-       << " State " << static_cast<int>(ins->GetPropState())
-       << " ProposeNum " << ins->GetProposeNum() 
-       << " PromisedNum " << ins->GetPromisedNum()
-       << " AcceptedNum " << ins->GetAcceptedNum();
-    return make_tuple(ss.str(), ins->GetAcceptedValue());
-}
-
 bool PaxosImpl::UpdateNextCommitedIndex(uint64_t chosen_index) 
 {
     chosen_set_.insert(chosen_index);
@@ -200,8 +171,9 @@ bool PaxosImpl::UpdateNextCommitedIndex(uint64_t chosen_index)
             next <= max_index_; ++next) {
         assert(next > commited_index_);
         auto ins = GetInstance(next, false);
-        assert(nullptr != ins);
-        if (!ins->IsChosen() || 0ull != ins->GetPendingSeq()) {
+
+        if ((nullptr != ins) && 
+                (!ins->IsChosen() || 0ull != ins->GetPendingSeq())) {
             break;
         }
 
@@ -213,24 +185,6 @@ bool PaxosImpl::UpdateNextCommitedIndex(uint64_t chosen_index)
             " next_commited_index_ %" PRIu64, 
             prev_next_commited_index, next_commited_index_);
     return prev_next_commited_index < next_commited_index_;
-}
-
-std::set<uint64_t> 
-PaxosImpl::GetAllTimeoutIndex(const std::chrono::milliseconds timeout)
-{
-    set<uint64_t> timeout_ins;
-    for (const auto& idx_ins_pair : ins_map_) {
-        uint64_t index = idx_ins_pair.first;
-        PaxosInstance* ins = idx_ins_pair.second.get();
-        assert(0 < index);
-        assert(nullptr != ins);
-
-        if (!ins->IsChosen() && ins->IsTimeout(timeout)) {
-            timeout_ins.insert(index);
-        }
-    }
-
-    return timeout_ins;
 }
 
 bool PaxosImpl::CanFastProp(uint64_t prop_index)
@@ -304,7 +258,8 @@ ProduceRsp(
     {
         // update paos_impl:: prop_num_gen_
         msg_template.set_proposed_num(ins->GetProposeNum());
-        paxos_impl.UpdatePropNumGen(ins->GetProposeNum());
+        assert(0ull < msg_template.proposed_num());
+        // paxos_impl.UpdatePropNumGen(ins->GetProposeNum());
  
         vec_msg = batchBuildMsg(
                 selfid, group_ids, msg_template);

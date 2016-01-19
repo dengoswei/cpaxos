@@ -131,7 +131,8 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
         {
             bool fast_accept = MessageType::FAST_ACCPT == msg.type();
             updateAccepted(
-                    msg.proposed_num(), msg.accepted_value(), fast_accept);
+                    msg.proposed_num(), 
+                    msg.accepted_value(), fast_accept);
             rsp_msg_type = fast_accept ? 
                 MessageType::FAST_ACCPT_RSP : MessageType::ACCPT_RSP;
         }
@@ -146,18 +147,24 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
                 break;
             }
 
-            auto max_prop_num = max(prop_num_gen_.Get(), getPromisedNum());
+            auto max_prop_num = max(
+                    getProposeNum(), getPromisedNum());
             max_prop_num = max(max_prop_num, msg.proposed_num());
             prop_num_gen_.Update(max_prop_num);
 
             // self promised
-            assert(false == updatePromised(prop_num_gen_.Get()));
+            assert(false == updatePromised(getProposeNum()));
             // self accepted
             assert(false == updateAccepted(
-                        prop_num_gen_.Get(), msg.accepted_value(), false));
+                        getProposeNum(), 
+                        msg.accepted_value(), false));
             clearStrictPropFlag();
             updatePropState(PropState::CHOSEN);
-            assert(prop_num_gen_.Get() > msg.proposed_num());
+            hassert(getProposeNum() >= msg.proposed_num(), 
+                    "%" PRIu64 " %" PRIu64 
+                    " msg.from %" PRIu64 " to %" PRIu64, 
+                    getProposeNum(), msg.proposed_num(), 
+                    msg.from(), msg.to());
             assert(getProposeNum() == getPromisedNum());
             assert(getProposeNum() == getAcceptedNum());
             assert(false == getStrictPropFlag());
@@ -168,6 +175,7 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
     // propose
     case MessageType::BEGIN_PROP:
         {
+            assert(0ull == msg.proposed_num());
             if (0ull != getPromisedNum()) {
                 logerr("CONFLICT selfid %" PRIu64 " index %" PRIu64 
                         " promised_num %" PRIu64, 
@@ -181,7 +189,8 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             setStrictPropFlag(); // mark as strict prop
 
             auto next_prop_state = 
-                stepBeginPropose(msg.proposed_num(), msg.accepted_value());
+                stepBeginPropose(
+                        msg.proposed_num(), msg.accepted_value());
             assert(PropState::PREPARE == next_prop_state);
             rsp_msg_type = updatePropState(next_prop_state);
             assert(MessageType::PROP == rsp_msg_type);
@@ -201,6 +210,7 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
         break;
     case MessageType::BEGIN_FAST_PROP:
         {
+            assert(0ull == msg.proposed_num());
             if (0ull != getPromisedNum()) {
                 logerr("CONFLICT selfid %" PRIu64 " index %" PRIu64
                         " promised_num %" PRIu64, 
@@ -215,7 +225,8 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
 
             // => skip prepare phase 
             auto next_prop_state = 
-                stepBeginPropose(msg.proposed_num(), msg.accepted_value());
+                stepBeginPropose(
+                        msg.proposed_num(), msg.accepted_value());
             assert(PropState::PREPARE == next_prop_state);
             rsp_msg_type = updatePropState(next_prop_state);
             assert(MessageType::PROP == rsp_msg_type);
@@ -533,7 +544,7 @@ PaxosInstance::GetPendingHardState(
 
     hs->set_logid(logid);
     hs->set_index(paxos_index);
-    hs->set_promised_num(GetProposeNum());
+    hs->set_proposed_num(GetProposeNum());
     hs->set_promised_num(GetPromisedNum());
     hs->set_accepted_num(GetAcceptedNum());
     if (0ull != GetAcceptedNum()) {

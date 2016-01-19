@@ -59,10 +59,13 @@ paxos_instance_test: paxos_instance_test.o ../paxos_instance.o ../cpaxospb/paxos
 	$(BUILDEXE)
 
 paxos_impl_test: paxos_impl_test.o test_helper.o \
-	../paxos_instance.o ../paxos_impl.o ../cpaxospb/paxos.pb.o gtest_main.a
+	../paxos_instance.o ../paxos_impl.o ../paxos.o \
+	../cpaxospb/paxos.pb.o gtest_main.a
 	$(BUILDEXE)
 
-paxos_test: paxos_test.o ../paxos_instance.o ../paxos_impl.o ../paxos.o ../cpaxospb/paxos.pb.o gtest_main.a
+paxos_test: paxos_test.o test_helper.o \
+	../paxos_instance.o ../paxos_impl.o ../paxos.o \
+	../cpaxospb/paxos.pb.o gtest_main.a
 	$(BUILDEXE)
 
 paxos_pb_test: paxos_pb_test.o ../cpaxospb/paxos.pb.o gtest_main.a

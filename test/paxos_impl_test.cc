@@ -72,7 +72,7 @@ TEST(PaxosImplTest, SimplePropose)
 
     // 2. send prop to peers
     {
-        vec_msg = apply(map_paxos, vec_msg);
+        vec_msg = apply(map_paxos, vec_msg, 0, 0);
         assert(vec_msg.size() == group_ids.size() - 1);
         for (auto& rsp_msg : vec_msg) {
             assert(nullptr != rsp_msg);
@@ -97,7 +97,7 @@ TEST(PaxosImplTest, SimplePropose)
 
     // 3. peers send prop rsp back to selfid
     {
-        vec_msg = apply(map_paxos, vec_msg);
+        vec_msg = apply(map_paxos, vec_msg, 0, 0);
         assert(vec_msg.size() == group_ids.size() - 1);
         {
             auto index = paxos->GetMaxIndex();
@@ -119,7 +119,7 @@ TEST(PaxosImplTest, SimplePropose)
 
     // 4. selfid send accpt to peers
     {
-        vec_msg = apply(map_paxos, vec_msg);
+        vec_msg = apply(map_paxos, vec_msg, 0, 0);
         assert(vec_msg.size() == group_ids.size() - 1);
         for (auto& rsp_msg : vec_msg) {
             assert(nullptr != rsp_msg);
@@ -141,7 +141,7 @@ TEST(PaxosImplTest, SimplePropose)
 
     // 5. peers send accpt_rsp to selfid
     {
-        vec_msg = apply(map_paxos, vec_msg);
+        vec_msg = apply(map_paxos, vec_msg, 0, 0);
         assert(false == vec_msg.empty());
         {
             assert(paxos->GetCommitedIndex() == paxos->GetMaxIndex());
@@ -161,7 +161,7 @@ TEST(PaxosImplTest, SimplePropose)
 
     // 7. selfid send chosen to peers
     {
-        vec_msg = apply(map_paxos, vec_msg);
+        vec_msg = apply(map_paxos, vec_msg, 0, 0);
         assert(true == vec_msg.empty());
         auto index = paxos->GetCommitedIndex();
         assert(paxos->GetMaxIndex() == index);
@@ -203,7 +203,7 @@ TEST(PaxosImplTest, FastProp)
         assert(false == paxos->CanFastProp(prop_msg->index()));
 
         vec_msg.emplace_back(move(prop_msg));
-        apply_until(map_paxos, move(vec_msg));
+        apply_until(map_paxos, move(vec_msg), 0, 0);
         for (const auto& id_paxos : map_paxos) {
             const auto& peer_paxos = id_paxos.second;
             assert(nullptr != peer_paxos);
@@ -227,7 +227,7 @@ TEST(PaxosImplTest, FastProp)
             prop_msg->set_type(MessageType::BEGIN_FAST_PROP);
 
             vec_msg.emplace_back(move(prop_msg));
-            vec_msg = apply(map_paxos, vec_msg);
+            vec_msg = apply(map_paxos, vec_msg, 0, 0);
             assert(vec_msg.size() == group_ids.size() - 1);
             for (auto& rsp_msg : vec_msg) {
                 assert(nullptr != rsp_msg);
@@ -246,7 +246,7 @@ TEST(PaxosImplTest, FastProp)
 
         // 2.2 peers recv fast accept, send back fast accpt rsp
         {
-            vec_msg = apply(map_paxos, vec_msg);
+            vec_msg = apply(map_paxos, vec_msg, 0, 0);
             assert(vec_msg.size() == group_ids.size() - 1);
             for (auto& rsp_msg : vec_msg) {
                 assert(nullptr != rsp_msg);
@@ -266,7 +266,7 @@ TEST(PaxosImplTest, FastProp)
 
         // 2.3 self recv fast accpt rsp, mark ins as chosen(broad-cast)
         {
-            vec_msg = apply(map_paxos, vec_msg);
+            vec_msg = apply(map_paxos, vec_msg, 0, 0);
             assert(false == vec_msg.empty());
             {
                 auto ins = paxos->GetInstance(prop_index, false);
@@ -286,7 +286,7 @@ TEST(PaxosImplTest, FastProp)
 
         // 2.4 peers recv chosen
         {
-            vec_msg = apply(map_paxos, vec_msg);
+            vec_msg = apply(map_paxos, vec_msg, 0, 0);
             assert(true == vec_msg.empty());
             for (auto id : group_ids) {
                 auto& peer_paxos = map_paxos[id];
@@ -322,7 +322,7 @@ TEST(PaxosImplTest, FastProp)
         vec_msg.emplace_back(move(prop_msg));
         // 1. 
         {
-            vec_msg = apply(map_paxos, vec_msg);
+            vec_msg = apply(map_paxos, vec_msg, 0, 0);
             assert(vec_msg.size() == group_ids.size() - 1);
             {
                 auto ins = peer_paxos->GetInstance(prop_index, false);
@@ -330,7 +330,7 @@ TEST(PaxosImplTest, FastProp)
                 assert(true == ins->GetStrictPropFlag());
             }
         }
-        apply_until(map_paxos, move(vec_msg));
+        apply_until(map_paxos, move(vec_msg), 0, 0);
         for (const auto& id_paxos : map_paxos) {
             auto& other_paxos = id_paxos.second;
             assert(nullptr != other_paxos);
@@ -370,7 +370,7 @@ TEST(PaxosImplTest, RandomIterPropose)
             assert(0ull < prop_index);
             vector<unique_ptr<Message>> vec_msg;
             vec_msg.emplace_back(buildMsgProp(logid, prop_id, prop_index));
-            apply_until(map_paxos, move(vec_msg));
+            apply_until(map_paxos, move(vec_msg), 0, 0);
         }
 
         prop_index = paxos->NextProposingIndex();
@@ -382,6 +382,135 @@ TEST(PaxosImplTest, RandomIterPropose)
                     peer_paxos->GetMaxIndex());
             assert((prop_id == id) == peer_paxos->CanFastProp(prop_index));
         }
+    }
+}
+
+TEST(PaxosImplTest, LiveLock)
+{
+    auto logid = LOGID;
+    auto group_ids = GROUP_IDS;
+
+    auto map_paxos = build_paxos(logid, group_ids);
+    assert(map_paxos.size() == group_ids.size());
+
+    uint64_t prop_index = map_paxos[1ull]->NextProposingIndex();
+    assert(0ull < prop_index);
+
+    map<uint64_t, vector<unique_ptr<Message>>> map_msg;
+    // 1. begin propose
+    for (auto id : group_ids) {
+        auto& paxos = map_paxos[id];
+        assert(nullptr != paxos);
+        auto prop_msg = buildMsgProp(logid, id, prop_index);
+        assert(nullptr != prop_msg);
+        map_msg[id].emplace_back(move(prop_msg));
+
+        // apply begin prop; produce prop
+        auto vec_msg = apply(map_paxos, map_msg[id], 0, 0);
+        map_msg[id].swap(vec_msg);
+    }
+
+    // 2. iter apply map_msg
+    for (int i = 0; i < 30; ++i) {
+        for (auto id : group_ids) {
+            assert(false == map_msg[id].empty());
+            auto vec_msg = apply(map_paxos, map_msg[id], 0, 0);
+            logdebug("LIVE LOCK id %" PRIu64 
+                    " map_msg[id].size %zu vec_msg.size %zu", 
+                    id, map_msg[id].size(), vec_msg.size());
+            for (auto& rsp_msg : vec_msg) {
+                logdebug("INFO from %" PRIu64 " to %" PRIu64 
+                        " proposed_num %" PRIu64 " promised_num %" PRIu64
+                        " msg_type %d", 
+                        rsp_msg->from(), rsp_msg->to(), 
+                        rsp_msg->proposed_num(), rsp_msg->promised_num(), 
+                        static_cast<int>(rsp_msg->type()));
+            }
+            assert(false == vec_msg.empty());
+
+            vec_msg = apply(map_paxos, vec_msg, 0, 0);
+            logdebug("LIVE LOCK id %" PRIu64 
+                    " map_msg[id].size %zu vec_msg.size %zu", 
+                    id, map_msg[id].size(), vec_msg.size());
+            for (auto& rsp_msg : vec_msg) {
+                logdebug("INFO from %" PRIu64 " to %" PRIu64 
+                        " proposed_num %" PRIu64 " promised_num %" PRIu64
+                        " msg_type %d", 
+                        rsp_msg->from(), rsp_msg->to(), 
+                        rsp_msg->proposed_num(), rsp_msg->promised_num(), 
+                        static_cast<int>(rsp_msg->type()));
+            }
+            assert(false == vec_msg.empty());
+
+            map_msg[id].swap(vec_msg);
+        }
+     }
+
+    // 3. prop_index still not chosen
+    for (auto id : group_ids) {
+        auto& paxos = map_paxos[id];
+        assert(nullptr != paxos);
+
+        assert(false == paxos->IsChosen(prop_index));
+        assert(paxos->GetMaxIndex() == prop_index);
+        assert(paxos->GetCommitedIndex() < paxos->GetMaxIndex());
+    }
+}
+
+TEST(PaxosImplTest, PropTestWithMsgDrop)
+{
+    auto logid = LOGID;
+    auto group_ids = GROUP_IDS;
+
+    auto map_paxos = build_paxos(logid, group_ids);
+    assert(map_paxos.size() == group_ids.size());
+
+    auto selfid = 1ull;
+    auto& paxos = map_paxos[selfid];
+    assert(nullptr != paxos);
+
+    // test times
+    const int drop_ratio = 40;
+    for (int i = 0; i < 20; ++i) {
+        string prop_value;
+        vector<unique_ptr<Message>> vec_msg;
+        auto prop_index = paxos->NextProposingIndex();
+        assert(0ull < prop_index);
+
+        // 1. prop with msg drop ratio 40 + i
+        auto prop_msg = buildMsgProp(logid, selfid, prop_index);
+        assert(nullptr != prop_msg);
+        prop_value = prop_msg->accepted_value();
+        vec_msg.emplace_back(move(prop_msg));
+
+        auto iter_drop_ratio = min(drop_ratio + i, 70);
+        auto iter_count = 0;
+        while (true) {
+            ++iter_count;
+            apply_until(map_paxos, move(vec_msg), 10, iter_drop_ratio);
+            if (paxos->IsChosen(prop_index)) {
+                break;
+            }
+
+            auto peer_id = 2ull;
+            assert(peer_id != selfid);
+            prop_msg = buildMsgProp(logid, peer_id, prop_index);
+            assert(nullptr != prop_msg);
+            prop_msg->set_type(MessageType::TRY_PROP);
+            assert(true == vec_msg.empty());
+            vec_msg.emplace_back(move(prop_msg));
+        }
+
+        auto ins = paxos->GetInstance(prop_index, false);
+        assert(nullptr != ins);
+        if (false == ins->GetAcceptedValue().empty()) {
+            assert(prop_value == ins->GetAcceptedValue());
+        }
+
+        logdebug("DROP TEST prop_index %" PRIu64 " iter_count %d"
+                " accepted_value.size %zu prop_value.size %zu", 
+                prop_index, iter_count, ins->GetAcceptedValue().size(), 
+                prop_value.size());
     }
 }
 

@@ -19,9 +19,6 @@ class Message;
 class HardState;
 
 
-std::unique_ptr<HardState>
-    CreateHardState(uint64_t index, const PaxosInstance* ins);
-
 struct PaxosCallBack {
 
     std::function<std::unique_ptr<HardState>(uint64_t, uint64_t)> read;
@@ -47,27 +44,16 @@ public:
 
     paxos::ErrorCode Step(const Message& msg);
 
-    paxos::ErrorCode CheckAndFixTimeout(const std::chrono::milliseconds& timeout);
-
-    std::tuple<paxos::ErrorCode, uint64_t, std::unique_ptr<HardState>> Get(uint64_t index);
-    std::tuple<paxos::ErrorCode, uint64_t> TrySet(
-            uint64_t index, const std::string& proposing_value);
+    paxos::ErrorCode 
+        CheckAndFixTimeout(const std::chrono::milliseconds& timeout);
 
     void Wait(uint64_t index);
-    bool WaitFor(uint64_t index, const std::chrono::milliseconds timeout);
-
-    // get timeout paxos instance
-    std::set<uint64_t> GetAllTimeoutIndex(
-            const std::chrono::milliseconds timeout);
+    bool WaitFor(
+            uint64_t index, const std::chrono::milliseconds timeout);
 
     uint64_t GetMaxIndex();
     uint64_t GetCommitedIndex();
     uint64_t GetSelfId();
-
-    std::tuple<uint64_t, uint64_t, uint64_t> GetPaxosInfo();
-
-    // add for test
-    std::tuple<std::string, std::string> GetInfo(uint64_t index);
 
 private:
     std::mutex prop_mutex_;

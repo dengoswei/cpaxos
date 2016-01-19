@@ -11,4 +11,6 @@
 - fast accept:
 
 
-
+## FIX BUG
+- random run paxos_impl_test
+  paxos_instance.cc line 163: hassert(getProposeNum() > msg.proposed_num()) will failed ? but why ???
