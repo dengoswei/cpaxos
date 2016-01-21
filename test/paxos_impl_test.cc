@@ -380,7 +380,8 @@ TEST(PaxosImplTest, RandomIterPropose)
 
             assert(peer_paxos->GetCommitedIndex() == 
                     peer_paxos->GetMaxIndex());
-            assert((prop_id == id) == peer_paxos->CanFastProp(prop_index));
+            assert((prop_id == id) == 
+                    peer_paxos->CanFastProp(prop_index));
         }
     }
 }

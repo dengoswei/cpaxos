@@ -75,7 +75,7 @@ private:
         read_nolock(const std::string& key) const;
 
 private:
-    int disk_fail_ratio_ = 0;
+    const int disk_fail_ratio_;
     std::mutex mutex_;
     std::map<std::string, std::unique_ptr<paxos::HardState>> logs_;
 };
@@ -100,7 +100,7 @@ public:
     bool empty();
 
 private:
-    int drop_ratio_ = 0;
+    const int drop_ratio_;
     std::mutex queue_mutex_;
     std::deque<std::unique_ptr<paxos::Message>> msg_queue_;
 };
@@ -109,6 +109,8 @@ private:
 
 std::unique_ptr<paxos::Message> 
 buildMsgProp(uint64_t logid, uint64_t to, uint64_t index);
+
+std::string genPropValue();
 
 
 } // namespace test

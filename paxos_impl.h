@@ -64,8 +64,8 @@ public:
 private:
 //    Drop mutex protect
 //    :=> paxos won't be thread safe;
-    uint64_t logid_ = 0;
-    uint64_t selfid_ = 0;
+    const uint64_t logid_;
+    const uint64_t selfid_;
     std::set<uint64_t> group_ids_;
 
     uint64_t max_index_ = 0;

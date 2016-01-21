@@ -53,7 +53,10 @@ public:
 
     uint64_t GetMaxIndex();
     uint64_t GetCommitedIndex();
-    uint64_t GetSelfId();
+    uint64_t GetSelfId() const;
+    uint64_t GetLogId() const;
+
+    bool IsChosen(uint64_t index);
 
 private:
     std::mutex prop_mutex_;

@@ -87,6 +87,7 @@ enum ErrorCode {
     OK = 0;
 
     UNCOMMITED_INDEX = 1;
+    NO_TIMEOUT_INDEX = 2;
 
     BUSY = -100;
 

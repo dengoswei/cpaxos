@@ -153,6 +153,12 @@ buildMsgProp(uint64_t logid, uint64_t to, uint64_t index)
     return msg;
 }
 
+std::string genPropValue()
+{
+    RandomStrGen<100, 200> gen;
+    return gen.Next();
+}
+
 
 // StorageHelper
 
@@ -171,6 +177,15 @@ int StorageHelper::write(std::unique_ptr<paxos::HardState> hs)
     assert(nullptr != hs);
     assert(0ull < hs->index());
     assert(0ull < hs->proposed_num());
+
+    bool disk_fail = btest(disk_fail_ratio_);
+    if (true == disk_fail) {
+        logdebug("DISK FAIL logid %" PRIu64 " index %" PRIu64 
+                " proposed_num %" PRIu64 " seq %d", 
+                hs->logid(), hs->index(), hs->proposed_num(), 
+                hs->seq());
+        return -1;
+    }
 
     auto key = makeKey(hs->logid(), hs->index());
     lock_guard<mutex> lock(mutex_);
@@ -212,6 +227,15 @@ StorageHelper::read(uint64_t logid, uint64_t log_index)
 int SendHelper::send(std::unique_ptr<paxos::Message> msg)
 {
     assert(nullptr != msg);
+    bool drop = btest(drop_ratio_);
+    if (true == drop) {
+        logdebug("DROP from %" PRIu64 " to %" PRIu64 
+                " proposed_num %" PRIu64 " msg.type %d", 
+                msg->from(), msg->to(), msg->proposed_num(), 
+                static_cast<int>(msg->type()));
+        return -1;
+    }
+
     lock_guard<mutex> lock(queue_mutex_);
     msg_queue_.push_back(move(msg));
     assert(nullptr == msg);

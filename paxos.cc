@@ -122,7 +122,7 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
         ret = callback_.write(move(hs)); 
         if (0 != ret) {
             logdebug("callback_.write index %" PRIu64 " ret %d", 
-                    hs->index(), ret);
+                    msg.index(), ret);
             return paxos::ErrorCode::STORAGE_WRITE_ERROR;
         }
     }
@@ -178,7 +178,7 @@ paxos::ErrorCode Paxos::CheckAndFixTimeout(
         std::lock_guard<std::mutex> lock(paxos_mutex_);
         auto prop_index = paxos_impl_->NextProposingIndex();
         if (0ull != prop_index) {
-            return ErrorCode::OK; // do nothing
+            return ErrorCode::NO_TIMEOUT_INDEX; // do nothing
         }
 
         assert(0ull == prop_index);
@@ -186,10 +186,11 @@ paxos::ErrorCode Paxos::CheckAndFixTimeout(
         auto ins = paxos_impl_->GetInstance(check_index, false);
         assert(nullptr != ins);
         if (!ins->IsTimeout(timeout)) {
-            return ErrorCode::OK; // not yet timeout
+            return ErrorCode::NO_TIMEOUT_INDEX; // not yet timeout
         }
 
         // timeout
+        prop_index = check_index;
         check_msg.set_logid(paxos_impl_->GetLogId());
         check_msg.set_to(paxos_impl_->GetSelfId());
         check_msg.set_index(prop_index);
@@ -245,11 +246,23 @@ uint64_t Paxos::GetCommitedIndex()
     return paxos_impl_->GetCommitedIndex();
 }
 
-uint64_t Paxos::GetSelfId() 
+uint64_t Paxos::GetSelfId() const 
 {
-    std::lock_guard<std::mutex> lock(paxos_mutex_);
     return paxos_impl_->GetSelfId();
 }
+
+uint64_t Paxos::GetLogId() const
+{
+    return paxos_impl_->GetLogId();
+}
+
+bool Paxos::IsChosen(uint64_t index) 
+{
+    assert(0ull < index);
+    std::lock_guard<std::mutex> lock(paxos_mutex_);
+    return index <= paxos_impl_->GetCommitedIndex(); 
+}
+
 
 } // namespace paxos
 
