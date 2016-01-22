@@ -98,7 +98,9 @@ TEST(PaxosImplTest, SimplePropose)
     // 3. peers send prop rsp back to selfid
     {
         vec_msg = apply(map_paxos, vec_msg, 0, 0);
-        assert(vec_msg.size() == group_ids.size() - 1);
+        hassert(vec_msg.size() == group_ids.size() - 1, 
+                "vec_msg.size %zu group_ids.size %zu", 
+                vec_msg.size(), group_ids.size());
         {
             auto index = paxos->GetMaxIndex();
             // check selfid stat

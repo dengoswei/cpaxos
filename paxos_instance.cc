@@ -252,6 +252,131 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
     return rsp_msg_type;
 }
 
+std::unique_ptr<Message>
+PaxosInstanceImpl::produceRsp(
+        const Message&req_msg, 
+        MessageType rsp_msg_type)
+{
+    Message msg_template;
+    {
+        msg_template.set_logid(req_msg.logid());
+        msg_template.set_index(req_msg.index());
+        msg_template.set_type(rsp_msg_type);
+        msg_template.set_from(req_msg.to());
+        msg_template.set_to(req_msg.from());
+
+        msg_template.set_proposed_num(req_msg.proposed_num());
+    }
+
+    unique_ptr<Message> rsp_msg = nullptr;
+    switch (rsp_msg_type) {
+    case MessageType::PROP:
+    {
+        rsp_msg = make_unique<Message>(msg_template);
+        assert(nullptr != rsp_msg);
+        // update paos_impl:: prop_num_gen_
+        rsp_msg->set_proposed_num(getProposeNum());
+        assert(0ull < rsp_msg->proposed_num());
+ 
+        // broad-cast
+        rsp_msg->set_to(0ull);
+    }
+        break;
+    case MessageType::PROP_RSP:
+    {
+        rsp_msg = make_unique<Message>(msg_template);
+        assert(nullptr != rsp_msg);
+        
+        assert(MessageType::PROP_RSP == rsp_msg->type());
+        rsp_msg->set_promised_num(getPromisedNum());
+        assert(rsp_msg->promised_num() >= rsp_msg->proposed_num());
+        if (req_msg.proposed_num() == rsp_msg->promised_num()) {
+            // promised 
+            rsp_msg->set_accepted_num(getAcceptedNum());
+            rsp_msg->set_accepted_value(getAcceptedValue());
+        }
+    }
+        break;
+    case MessageType::ACCPT:
+    case MessageType::FAST_ACCPT:
+    {
+        rsp_msg = make_unique<Message>(msg_template);
+        assert(nullptr != rsp_msg);
+
+        if (MessageType::FAST_ACCPT == rsp_msg_type) {
+            assert(MessageType::BEGIN_FAST_PROP == req_msg.type());
+            assert(0ull == req_msg.proposed_num());
+            rsp_msg->set_proposed_num(getProposeNum());
+        }
+
+        rsp_msg->set_accepted_value(getAcceptedValue());
+        rsp_msg->set_to(0ull);
+    }
+        break;
+    case MessageType::ACCPT_RSP:
+    case MessageType::FAST_ACCPT_RSP:
+    {
+        rsp_msg = make_unique<Message>(msg_template);
+        assert(nullptr != rsp_msg);
+
+        rsp_msg->set_promised_num(getPromisedNum());
+        rsp_msg->set_accepted_num(getAcceptedNum());
+    }
+        break;
+    case MessageType::CHOSEN:
+    {
+        // mark index as chosen
+        if (MessageType::CHOSEN != req_msg.type()) {
+            rsp_msg= make_unique<Message>(msg_template);
+            assert(nullptr != rsp_msg);
+              
+            rsp_msg->set_promised_num(getPromisedNum());
+            rsp_msg->set_accepted_num(getAcceptedNum());
+            if (rsp_msg->accepted_num() != req_msg.accepted_num()) {
+                rsp_msg->set_accepted_value(getAcceptedValue());
+            }
+
+            // broad cast
+            rsp_msg->set_to(0ull);
+        }
+        // else => no rsp
+    }
+        break;
+    case MessageType::UNKOWN:
+    {
+        if (MessageType::CHOSEN == req_msg.type()) {
+            assert(req_msg.accepted_num() != getAcceptedNum());
+
+            // rsp_msg for self
+            // TODO ?
+            rsp_msg = make_unique<Message>(msg_template);
+            assert(nullptr != rsp_msg);
+
+            rsp_msg->set_type(MessageType::CHOSEN);
+            // assert(req_msg.to() == selfid); ?
+            rsp_msg->set_to(req_msg.to()); 
+            // self-call after succ store hs;??
+            rsp_msg->set_promised_num(getPromisedNum());
+            rsp_msg->set_accepted_num(getAcceptedNum());
+        }
+    }
+        // else => ignore
+        break;
+    case MessageType::NOOP:
+        logdebug("selfid %" PRIu64 " req_msg.from %" PRIu64 
+                " req_msg.index %" PRIu64 " req_msg_type %d rsp NOOP", 
+                req_msg.to(), req_msg.from(), req_msg.index(), static_cast<int>(req_msg.type()));
+        break;
+    default:
+        hassert(false, "%s rsp_msg_type %u", __func__, 
+                static_cast<int>(rsp_msg_type));
+        // do nothing
+        break;
+    }
+
+    return rsp_msg;
+}
+
 MessageType 
 PaxosInstanceImpl::updatePropState(PropState next_prop_state)
 {
@@ -555,6 +680,14 @@ PaxosInstance::GetPendingHardState(
     assert(0 < hs->seq());
     return hs;
 }
+
+std::unique_ptr<Message>
+PaxosInstance::ProduceRsp(
+        const Message& req_msg, MessageType rsp_msg_type)
+{
+    return ins_impl_.produceRsp(req_msg, rsp_msg_type);
+}
+
 
 } // namespace paxos
 

@@ -48,6 +48,31 @@ batchBuildMsg(
     return vec_msg;
 }
 
+std::vector<std::unique_ptr<paxos::Message>>
+batchBuildMsg(
+        const uint64_t exclude_id, 
+        const std::set<uint64_t>& group_ids, 
+        std::unique_ptr<Message> rsp_msg)
+{
+    assert(nullptr != rsp_msg);
+    assert(0ull == rsp_msg->to());
+
+    vector<unique_ptr<Message>> vec_msg;
+    vec_msg.reserve(group_ids.size() - 1);
+    for (auto id : group_ids) {
+        if (exclude_id == id) {
+            continue;
+        }
+
+        auto msg = make_unique<Message>(*rsp_msg);
+        assert(nullptr != msg);
+        msg->set_to(id);
+        vec_msg.emplace_back(move(msg));
+    }
+
+    return vec_msg;
+}
+
 PaxosInstance* GetInstance(
         PaxosImpl& paxos_impl, uint64_t index, PaxosInstance* disk_ins)
 {
@@ -227,105 +252,44 @@ ProduceRsp(
         MessageType rsp_msg_type, 
         PaxosInstance* disk_ins)
 {
+    assert(req_msg.to() == paxos_impl.GetSelfId());
+    assert(req_msg.logid() == paxos_impl.GetLogId());
+
     auto ins = GetInstance(paxos_impl, req_msg.index(), disk_ins);
     assert(nullptr != ins);
 
-    auto selfid = paxos_impl.GetSelfId();
-    auto logid = paxos_impl.GetLogId();
-    const auto& group_ids = paxos_impl.GetGroupIds();
-    hassert(req_msg.logid() == logid, 
-            "req_msg.logid %" PRIu64 " logid_ %" PRIu64, 
-            req_msg.logid(), logid);
-    hassert(req_msg.to() == selfid, "type %d req_msg.to %" 
-            PRIu64 " selfid_ %" PRIu64 "\n", 
-            static_cast<int>(req_msg.type()), req_msg.to(), selfid);
-
-    uint64_t prev_next_commited_index = 0;
-    Message msg_template;
-    {
-        msg_template.set_logid(req_msg.logid());
-        msg_template.set_index(req_msg.index());
-        msg_template.set_type(rsp_msg_type);
-        msg_template.set_from(req_msg.to());
-        msg_template.set_to(req_msg.from());
-
-        msg_template.set_proposed_num(req_msg.proposed_num());
-    }
-
     vector<unique_ptr<Message>> vec_msg;
-    switch (rsp_msg_type) {
-    case MessageType::PROP:
-    {
-        // update paos_impl:: prop_num_gen_
-        msg_template.set_proposed_num(ins->GetProposeNum());
-        assert(0ull < msg_template.proposed_num());
-        // paxos_impl.UpdatePropNumGen(ins->GetProposeNum());
- 
-        vec_msg = batchBuildMsg(
-                selfid, group_ids, msg_template);
-        assert(false == vec_msg.empty());
-        assert(vec_msg.size() == group_ids.size() - size_t{1});
-    }
-        break;
-    case MessageType::PROP_RSP:
-    {
-        auto rsp_msg = make_unique<Message>(msg_template);
-        assert(nullptr != rsp_msg);
-        
-        assert(MessageType::PROP_RSP == rsp_msg->type());
-        rsp_msg->set_promised_num(ins->GetPromisedNum());
-        assert(rsp_msg->promised_num() >= rsp_msg->proposed_num());
-        if (req_msg.proposed_num() == rsp_msg->promised_num()) {
-            // promised 
-            rsp_msg->set_accepted_num(ins->GetAcceptedNum());
-            rsp_msg->set_accepted_value(ins->GetAcceptedValue());
+    auto rsp_msg = ins->ProduceRsp(req_msg, rsp_msg_type);
+
+    logdebug("rsp_msg %p rsp_msg_type %d", 
+            rsp_msg.get(), static_cast<int>(rsp_msg_type));
+    if (nullptr != rsp_msg) {
+        logdebug("selfid %" PRIu64 " rsp_msg_type %d "
+                "rsp_msg->to %" PRIu64, 
+                paxos_impl.GetSelfId(), 
+                static_cast<int>(rsp_msg_type), 
+                rsp_msg->to());
+        assert(rsp_msg->from() == req_msg.to());
+        hassert(MessageType::UNKOWN == rsp_msg_type ||
+                rsp_msg->type() == rsp_msg_type, 
+                "rsp_msg:type %d rsp_msg_type %d", 
+                static_cast<int>(rsp_msg->type()), 
+                static_cast<int>(rsp_msg_type));
+        assert(rsp_msg->index() == req_msg.index());
+        assert(rsp_msg->logid() == req_msg.logid());
+        if (0ull == rsp_msg->to()) {
+            // broad cast message
+            vec_msg = batchBuildMsg(
+                    paxos_impl.GetSelfId(), 
+                    paxos_impl.GetGroupIds(), move(rsp_msg));
         }
-
-        vec_msg.emplace_back(move(rsp_msg));
-    }
-        break;
-    case MessageType::ACCPT:
-    case MessageType::FAST_ACCPT:
-    {
-        if (MessageType::FAST_ACCPT == rsp_msg_type) {
-            assert(MessageType::BEGIN_FAST_PROP == req_msg.type());
-            assert(0ull == req_msg.proposed_num());
-            msg_template.set_proposed_num(ins->GetProposeNum());
+        else {
+            vec_msg.emplace_back(move(rsp_msg));
         }
-        msg_template.set_accepted_value(ins->GetAcceptedValue());
-        vec_msg = batchBuildMsg(selfid, group_ids, msg_template);
-        assert(false == vec_msg.empty());
-        assert(vec_msg.size() == group_ids.size() - size_t{1});
     }
-        break;
-    case MessageType::ACCPT_RSP:
-    case MessageType::FAST_ACCPT_RSP:
-    {
-        auto rsp_msg = make_unique<Message>(msg_template);
-        assert(nullptr != rsp_msg);
+    assert(nullptr == rsp_msg);
 
-        rsp_msg->set_promised_num(ins->GetPromisedNum());
-        rsp_msg->set_accepted_num(ins->GetAcceptedNum());
-        vec_msg.emplace_back(move(rsp_msg));
-    }
-        break;
-    case MessageType::CHOSEN:
-    {
-        // mark index as chosen
-        if (MessageType::CHOSEN != req_msg.type()) {
-           
-            msg_template.set_promised_num(ins->GetPromisedNum());
-            msg_template.set_accepted_num(ins->GetAcceptedNum());
-            if (msg_template.accepted_num() != req_msg.accepted_num()) {
-                msg_template.set_accepted_value(ins->GetAcceptedValue());
-            }
-
-            vec_msg = batchBuildMsg(selfid, group_ids, msg_template);
-            assert(false == vec_msg.empty());
-            assert(vec_msg.size() == group_ids.size() - size_t{1});
-        }
-        // else => no rsp
-
+    if (MessageType::CHOSEN == rsp_msg_type) {
         // mark req_msg.index as chosen index
         // => msg only send back if pending state have been 
         //    store successfully;
@@ -336,41 +300,6 @@ ProduceRsp(
                 paxos_impl.GetCommitedIndex(),
                 paxos_impl.GetNextCommitedIndex(), 
                 static_cast<int>(update));
-    }
-        break;
-    case MessageType::UNKOWN:
-    {
-        if (MessageType::CHOSEN == req_msg.type()) {
-            assert(req_msg.accepted_num() != ins->GetAcceptedNum());
-
-            // rsp_msg for self
-            // TODO ?
-            auto rsp_msg = make_unique<Message>(msg_template);
-            assert(nullptr != rsp_msg);
-
-            rsp_msg->set_type(MessageType::CHOSEN);
-            rsp_msg->set_to(selfid); 
-            // self-call after succ store hs;??
-            rsp_msg->set_promised_num(ins->GetPromisedNum());
-            rsp_msg->set_accepted_num(ins->GetAcceptedNum());
-
-            vec_msg.emplace_back(move(rsp_msg));
-            assert(nullptr == rsp_msg);
-        }
-    }
-        // else => ignore
-        break;
-    case MessageType::NOOP:
-        logdebug("selfid %" PRIu64 " req_msg.from %" PRIu64 
-                " req_msg.index %" PRIu64 " req_msg_type %d rsp NOOP", 
-                req_msg.to(), req_msg.from(), req_msg.index(), 
-                static_cast<int>(req_msg.type()));
-        break;
-    default:
-        hassert(false, "%s rsp_msg_type %u", __func__, 
-                static_cast<int>(rsp_msg_type));
-        // do nothing
-        break;
     }
 
     return vec_msg;

@@ -37,6 +37,9 @@ public:
 
     MessageType step(const Message& msg);
 
+    std::unique_ptr<Message>
+        produceRsp(const Message& req_msg, MessageType rsp_msg_type);
+
     MessageType updatePropState(PropState next_prop_state);
 
     // const function
@@ -153,6 +156,9 @@ public:
     ~PaxosInstance();
 
     MessageType Step(const Message& msg);
+
+    std::unique_ptr<Message>
+        ProduceRsp(const Message& req_msg, MessageType rsp_msg_type);
 
     PropState GetPropState() const { 
         return ins_impl_.getPropState();
