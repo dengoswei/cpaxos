@@ -50,6 +50,12 @@ void log_nothing(const char* /* format */, ...) {
 
 namespace paxos {
 
+template<typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args&&... args)
+{
+    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
+
 inline uint64_t prop_num_compose(uint8_t id, uint64_t prop_cnt)
 {
     return (prop_cnt << 8) + id;
@@ -84,16 +90,23 @@ public:
     // after update: Get() >= prop_num
     bool Update(uint64_t prop_num) 
     {
-        uint8_t id = 0;
-        uint64_t cnt = 0ull;
-
-        std::tie(id, cnt) = prop_num_decompose(std::max(prop_num, Get()));
-        if (id == selfid_) {
+        if (Get() >= prop_num) {
             return false;
         }
 
-        assert(prop_cnt_ < cnt + 1ull);
-        prop_cnt_ = cnt + 1ull;
+        // else assert(Get() < prop_num);
+        uint8_t id = 0;
+        uint64_t cnt = 0ull;
+        std::tie(id, cnt) = prop_num_decompose(prop_num);
+        if (id > selfid_) {
+            prop_cnt_ = cnt + 1ull;
+        }
+        else {
+            // assert(id <= selfid_);
+            prop_cnt_ = cnt;
+        }
+
+        assert(Get() >= prop_num);
         return true;
     }
 
