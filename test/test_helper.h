@@ -12,6 +12,7 @@
 
 namespace paxos {
 
+class Entry;
 class Message;
 class HardState;
 class PaxosImpl;
@@ -111,6 +112,17 @@ std::unique_ptr<paxos::Message>
 buildMsgProp(uint64_t logid, uint64_t to, uint64_t index);
 
 std::string genPropValue();
+
+void set_accepted_value(
+        const std::string& value, paxos::Message& msg);
+
+void set_accepted_value(
+        const paxos::Entry& value, paxos::Message& msg);
+
+void set_accepted_value(
+        const paxos::Entry& value, paxos::HardState& hs);
+
+
 
 
 } // namespace test

@@ -20,12 +20,18 @@ Paxos::Paxos(
 
 Paxos::~Paxos() = default;
 
-std::tuple<paxos::ErrorCode, uint64_t>
+std::tuple<paxos::ErrorCode, uint64_t, uint64_t>
 Paxos::Propose(const uint64_t index, const std::string& proposing_value)
 {
     Message prop_msg;
     prop_msg.set_type(MessageType::BEGIN_PROP);
-    prop_msg.set_accepted_value(proposing_value);
+
+    {
+        auto prop_entry = prop_msg.mutable_accepted_value();
+        assert(nullptr != prop_entry);
+        prop_entry->set_type(EntryType::EntryNormal);
+        prop_entry->set_data(proposing_value);
+    }
 
     std::lock_guard<std::mutex> prop_lock(prop_mutex_);
     {
@@ -33,7 +39,7 @@ Paxos::Propose(const uint64_t index, const std::string& proposing_value)
         uint64_t prop_index = paxos_impl_->NextProposingIndex();
         if (0ull == prop_index || 
                 (0ull != index && index != prop_index)) {
-            return std::make_tuple(ErrorCode::BUSY, 0ull);
+            return std::make_tuple(ErrorCode::BUSY, 0ull, 0ull);
         }
 
         assert(0ull < prop_index);
@@ -53,10 +59,17 @@ Paxos::Propose(const uint64_t index, const std::string& proposing_value)
     if (ErrorCode::OK != ret) {
         logerr("Step selfid %" PRIu64 " index %" PRIu64 " ret %d", 
                 prop_msg.to(), prop_msg.index(), ret);
-        return std::make_tuple(ret, 0ull);
+        return std::make_tuple(ret, 0ull, 0ull);
     }
 
-    return std::make_tuple(paxos::ErrorCode::OK, prop_msg.index());
+    {
+        std::lock_guard<std::mutex> lock(paxos_mutex_);
+        auto ins = paxos_impl_->GetInstance(prop_msg.index(), false);
+        assert(nullptr != ins);
+        auto eid = ins->GetProposeEID();
+        assert(0 < eid);
+        return std::make_tuple(paxos::ErrorCode::OK, prop_msg.index(), eid);
+    }
 }
 
 paxos::ErrorCode Paxos::Step(const Message& msg)
@@ -92,13 +105,7 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
                 }
 
                 disk_ins = make_unique<PaxosInstance>(
-                        group_size / 2 + 1, 
-                        chosen_hs->proposed_num(), 
-                        chosen_hs->promised_num(), 
-                        chosen_hs->accepted_num(), 
-                        chosen_hs->accepted_value(), 
-                        PropState::CHOSEN, 
-                        chosen_hs->seq());
+                        group_size / 2 + 1, PropState::CHOSEN, *chosen_hs);
                 assert(nullptr != disk_ins);
                 lock.lock();
             }
@@ -263,6 +270,28 @@ bool Paxos::IsChosen(uint64_t index)
     return index <= paxos_impl_->GetCommitedIndex(); 
 }
 
+int Paxos::CheckChosen(uint64_t index, uint64_t eid)
+{
+    assert(0ull < index);
+    assert(0ull < eid);
+    std::lock_guard<std::mutex> lock(paxos_mutex_);
+    if (index > paxos_impl_->GetCommitedIndex()) {
+        return -1;
+    }
+
+    auto ins = paxos_impl_->GetInstance(index, false);
+    if (nullptr == ins) {
+        return -2;
+    }
+
+    assert(nullptr != ins);
+    assert(true == ins->IsChosen());
+    if (ins->GetAcceptedValue().eid() != eid) {
+        return 0;
+    }
+
+    return 1;
+}
 
 } // namespace paxos
 

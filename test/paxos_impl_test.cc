@@ -44,7 +44,7 @@ TEST(PaxosImplTest, SimplePropose)
         assert(1ull == prop_index);
         auto prop_msg = buildMsgProp(logid, selfid, prop_index);
         assert(nullptr != prop_msg);
-        prop_value = prop_msg->accepted_value();
+        prop_value = prop_msg->accepted_value().data();
         assert(false == prop_value.empty());
         assert(selfid == prop_msg->to());
 
@@ -136,7 +136,7 @@ TEST(PaxosImplTest, SimplePropose)
                 assert(nullptr != ins);
                 assert(false == ins->GetStrictPropFlag());
                 assert(ins->GetAcceptedNum() == rsp_msg->accepted_num());
-                assert(prop_value == ins->GetAcceptedValue());
+                assert(prop_value == ins->GetAcceptedValue().data());
             }
         }
     }
@@ -176,7 +176,7 @@ TEST(PaxosImplTest, SimplePropose)
             auto ins = peer_paxos->GetInstance(index, false);
             assert(nullptr != ins);
             assert((selfid == id) == ins->GetStrictPropFlag());
-            assert(ins->GetAcceptedValue() == prop_value);
+            assert(ins->GetAcceptedValue().data() == prop_value);
             assert(PropState::CHOSEN == ins->GetPropState());
             assert(true == peer_paxos->IsChosen(index));
         }
@@ -483,7 +483,7 @@ TEST(PaxosImplTest, PropTestWithMsgDrop)
         // 1. prop with msg drop ratio 40 + i
         auto prop_msg = buildMsgProp(logid, selfid, prop_index);
         assert(nullptr != prop_msg);
-        prop_value = prop_msg->accepted_value();
+        prop_value = prop_msg->accepted_value().data();
         vec_msg.emplace_back(move(prop_msg));
 
         auto iter_drop_ratio = min(drop_ratio + i, 70);
@@ -506,13 +506,13 @@ TEST(PaxosImplTest, PropTestWithMsgDrop)
 
         auto ins = paxos->GetInstance(prop_index, false);
         assert(nullptr != ins);
-        if (false == ins->GetAcceptedValue().empty()) {
-            assert(prop_value == ins->GetAcceptedValue());
+        if (false == ins->GetAcceptedValue().data().empty()) {
+            assert(prop_value == ins->GetAcceptedValue().data());
         }
 
         logdebug("DROP TEST prop_index %" PRIu64 " iter_count %d"
                 " accepted_value.size %zu prop_value.size %zu", 
-                prop_index, iter_count, ins->GetAcceptedValue().size(), 
+                prop_index, iter_count, ins->GetAcceptedValue().data().size(), 
                 prop_value.size());
     }
 }

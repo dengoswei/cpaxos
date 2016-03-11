@@ -6,27 +6,28 @@
 
 using namespace paxos;
 
-TEST(TestLogEntry, SimpleTest)
+
+TEST(MessageTest, SimpleTest)
 {
-    LogEntry log_entry;
+    Message msg;
 
-    RandomStrGen<10, 50> sgen;
-    log_entry.set_logid(1ull);
-    log_entry.set_key(sgen.Next());
-    log_entry.set_value(sgen.Next());
+    assert(false == msg.has_promised_num());
+    assert(false == msg.has_accepted_value());
 
-    std::string dump_value;
-    bool ret = log_entry.SerializeToString(&dump_value);
-    assert(true == ret);
-    assert(false == dump_value.empty());
+    {
+        auto promised_num = msg.promised_num();
+        assert(0 == promised_num);
+        assert(false == msg.has_promised_num());
+    }
 
-    LogEntry new_log_entry;
-    ret = new_log_entry.ParseFromString(dump_value);
-    assert(true == ret);
-    assert(log_entry.logid() == new_log_entry.logid());
-    assert(log_entry.key() == new_log_entry.key());
-    assert(log_entry.value() == new_log_entry.value());
+    {
+        auto accepted_value = msg.accepted_value();
+        assert(false == msg.has_accepted_value());
+    }
+
+    {
+        auto accepted_value = msg.mutable_accepted_value();
+        assert(nullptr != accepted_value);
+        assert(true == msg.has_accepted_value());
+    }
 }
-
-
-

@@ -149,7 +149,7 @@ buildMsgProp(uint64_t logid, uint64_t to, uint64_t index)
     msg->set_index(index);
 
     RandomStrGen<100, 200> gen;
-    msg->set_accepted_value(gen.Next());
+    set_accepted_value(gen.Next(), *msg);
     return msg;
 }
 
@@ -349,6 +349,32 @@ build_paxos(
     assert(map_storage.size() == group_ids.size());
     return make_tuple(move(map_storage), move(map_paxos));
 }
+
+void set_accepted_value(
+        const std::string& value, paxos::Message& msg)
+{
+    auto entry = msg.mutable_accepted_value();
+    assert(nullptr != entry);
+    entry->set_data(value);
+}
+
+void set_accepted_value(
+        const paxos::Entry& value, paxos::Message& msg)
+{
+    auto entry = msg.mutable_accepted_value();
+    assert(nullptr != entry);
+    *entry = value;
+}
+
+void set_accepted_value(
+        const paxos::Entry& value, paxos::HardState& hs)
+{
+    auto entry = hs.mutable_accepted_value();
+    assert(nullptr != entry);
+    *entry = value;
+}
+
+
 
 } // namespace test
 

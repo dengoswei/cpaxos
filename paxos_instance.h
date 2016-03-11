@@ -28,12 +28,8 @@ public:
     PaxosInstanceImpl(int major_cnt, uint64_t prop_num);
     PaxosInstanceImpl(
             int major_cnt, 
-            uint64_t prop_num, 
-            uint64_t promised_num, 
-            uint64_t accepted_num, 
-            const std::string& accepted_value, 
             PropState prop_state, 
-            uint32_t store_seq);
+            const paxos::HardState& hs);
 
     MessageType step(const Message& msg);
 
@@ -47,7 +43,9 @@ public:
     uint64_t getProposeNum() const { return prop_num_gen_.Get(); }
     uint64_t getPromisedNum() const { return promised_num_; }
     uint64_t getAcceptedNum() const { return accepted_num_; }
-    const std::string& getAcceptedValue() const { 
+    uint64_t getProposeEID() const { return proposing_value_.eid(); }
+
+    const paxos::Entry& getAcceptedValue() const {
         return accepted_value_; 
     }
 
@@ -59,13 +57,13 @@ public:
 
     PropState stepBeginPropose(
             uint64_t hint_proposed_num, 
-            const std::string& proposing_value);
+            const paxos::Entry& proposing_value);
 
     PropState stepPrepareRsp(
             uint64_t prop_num, 
             uint64_t peer_id, uint64_t peer_promised_num, 
             uint64_t peer_accepted_num, 
-            const std::string& peer_accepted_value);
+            const paxos::Entry* peer_accepted_value);
 
     PropState stepAcceptRsp(
             uint64_t prop_num, 
@@ -77,7 +75,8 @@ public:
     bool updatePromised(uint64_t prop_num);
     bool updateAccepted(
             uint64_t prop_num, 
-            const std::string& prop_value, bool is_fast_accept);
+            const paxos::Entry& prop_value, 
+            bool is_fast_accept);
 
 
     bool isTimeout(const std::chrono::milliseconds& timeout) const;
@@ -121,12 +120,12 @@ private:
 
     // proposer
     bool is_strict_prop_ = false;
-    std::string proposing_value_;
+    paxos::Entry proposing_value_;
 
     // acceptor
     uint64_t promised_num_ = 0ull;
     uint64_t accepted_num_ = 0ull;
-    std::string accepted_value_;
+    paxos::Entry accepted_value_;
 
     std::chrono::time_point<
         std::chrono::system_clock> active_proposer_time_; 
@@ -144,12 +143,8 @@ public:
 
     PaxosInstance(
             int major_cnt, 
-            uint64_t proposed_num, 
-            uint64_t promised_num, 
-            uint64_t accepted_num, 
-            const std::string& accepted_value, 
             PropState prop_state, 
-            uint32_t store_seq);
+            const paxos::HardState& hs);
 
     // NOTICE:
     // over-come std::unque_ptr uncomplete type;
@@ -164,10 +159,11 @@ public:
         return ins_impl_.getPropState();
     }
 
+    uint64_t GetProposeEID() const { return ins_impl_.getProposeEID(); }
     uint64_t GetProposeNum() const { return ins_impl_.getProposeNum(); }
     uint64_t GetPromisedNum() const { return ins_impl_.getPromisedNum(); }
     uint64_t GetAcceptedNum() const { return ins_impl_.getAcceptedNum(); }
-    const std::string& GetAcceptedValue() const { 
+    const paxos::Entry& GetAcceptedValue() const {
         return ins_impl_.getAcceptedValue(); 
     }
     

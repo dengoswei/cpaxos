@@ -2,10 +2,11 @@
 #include "paxos_instance.h"
 #include "gtest/gtest.h"
 #include "paxos.pb.h"
-#include "gsl.h"
+#include "test_helper.h"
 
 
 using namespace paxos;
+using test::set_accepted_value;
 
 class PaxosInstanceTest : public ::testing::Test {
 
@@ -25,7 +26,7 @@ TEST_F(PaxosInstanceTest, SimpleImplPropose)
     {
         Message msg;
         msg.set_type(MessageType::BEGIN_PROP);
-        msg.set_accepted_value(proposing_value);
+        set_accepted_value(proposing_value, msg);
     
         auto rsp_msg_type = ins.step(msg);
         assert(MessageType::PROP == rsp_msg_type);
@@ -47,7 +48,7 @@ TEST_F(PaxosInstanceTest, SimpleImplPropose)
     ASSERT_EQ(PropState::WAIT_ACCEPT, ins.getPropState());
     // self accepted
     ASSERT_EQ(ins.getProposeNum(), ins.getAcceptedNum());
-    ASSERT_EQ(proposing_value, ins.getAcceptedValue());
+    ASSERT_EQ(proposing_value, ins.getAcceptedValue().data());
 
     msg.set_type(MessageType::ACCPT_RSP);
     msg.set_accepted_num(msg.promised_num());
@@ -67,7 +68,7 @@ TEST_F(PaxosInstanceTest, SimplePropose)
     {
         Message msg;
         msg.set_type(MessageType::BEGIN_PROP);
-        msg.set_accepted_value(proposing_value);
+        set_accepted_value(proposing_value, msg);
         auto rsp_msg_type = ins.Step(msg);
         assert(MessageType::PROP == rsp_msg_type);
     }

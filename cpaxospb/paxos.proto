@@ -1,51 +1,33 @@
-
 syntax = "proto2";
 
 package paxos;
 
+enum ErrorCode {
+    OK = 0;
+
+    UNCOMMITED_INDEX = 1;
+    NO_TIMEOUT_INDEX = 2;
+
+    BUSY = -100;
+
+    INVALID_INDEX = -200;
+
+    STORAGE_READ_ERROR = -300;
+    STORAGE_WRITE_ERROR = -310;
+}
 
 enum EntryType {
+    EntryNormal     = 0;
+    EntryConfChange = 1;
+}
 
-    CONFIGURATION = 1;
-
-    DATA = 2;
-
-};
-
-
-message Entry {
-
-    required EntryType type = 1;
-
-    required uint64 index = 2;
-
-    required uint64 proposed_num = 3;
-
-    optional uint64 promised_num = 4;
-
-    optional uint64 accepted_num = 5;
-
-    optional bytes accepted_value = 6;
-};
-
-
-message HardState {
-    required uint64 index = 1;
-    required uint64 proposed_num = 2;
-    optional uint64 promised_num = 3;
-    optional uint64 accepted_num = 5;
-    optional bytes accepted_value = 6;
-
-    required uint64 logid = 7;
-    optional uint32 seq = 8;
-};
-
-
-message LogEntry {
-    required uint64 logid = 1;
-    optional bytes key = 2;
-    optional bytes value = 3;
-};
+enum ConfChangeType {
+	ConfChangeAddNode    = 0;
+	ConfChangeRemoveNode = 1;
+	ConfChangeUpdateNode = 2;
+    ConfChangeAddCatchUpNode    = 3;
+    ConfChangeRemoveCatchUpNode = 4;
+}
 
 enum MessageType {
 
@@ -67,7 +49,20 @@ enum MessageType {
     BEGIN_FAST_PROP = 15;
 
     ERROR = -1;
-};
+}
+
+message ConfChange {
+	optional uint64          id       = 1;
+	optional ConfChangeType  type     = 2;
+	optional uint64          node_id  = 3;
+	optional bytes           context  = 4;
+}
+
+message Entry {
+    required EntryType type  = 1;
+    optional uint64    eid   = 2;
+    optional bytes     data  = 3;
+}
 
 message Message {
     required MessageType type = 1;
@@ -78,22 +73,19 @@ message Message {
     required uint64 proposed_num = 5;
     optional uint64 promised_num = 6;
     optional uint64 accepted_num = 7;
-    optional bytes accepted_value = 8;
+    optional Entry  accepted_value = 8;
 
     required uint64 logid = 9;
-};
+}
 
-enum ErrorCode {
-    OK = 0;
+message HardState {
+    required uint64 index = 1;
+    required uint64 proposed_num = 2;
+    optional uint64 promised_num = 3;
+    optional uint64 accepted_num = 5;
+    optional Entry  accepted_value = 6;
 
-    UNCOMMITED_INDEX = 1;
-    NO_TIMEOUT_INDEX = 2;
-
-    BUSY = -100;
-
-    INVALID_INDEX = -200;
-
-    STORAGE_READ_ERROR = -300;
-    STORAGE_WRITE_ERROR = -310;
-};
+    required uint64 logid = 7;
+    required uint32 seq = 8;
+}
 

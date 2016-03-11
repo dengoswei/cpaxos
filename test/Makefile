@@ -52,7 +52,8 @@ gtest_main.a : gtest-all.o gtest_main.o
 utils_test: utils_test.o gtest_main.a
 	$(BUILDEXE)
 
-paxos_instance_test: paxos_instance_test.o ../paxos_instance.o ../cpaxospb/paxos.pb.o gtest_main.a
+paxos_instance_test: paxos_instance_test.o \
+	../paxos_instance.o ../cpaxospb/paxos.pb.o gtest_main.a
 	$(BUILDEXE)
 
 paxos_impl_test: paxos_impl_test.o test_helper.o \

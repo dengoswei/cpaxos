@@ -8,6 +8,22 @@ namespace {
 
 std::chrono::milliseconds ACTIVE_TIME_OUT = std::chrono::milliseconds{100};
 
+void set_accepted_value(
+        const paxos::Entry& value, paxos::Message& msg)
+{
+    auto entry = msg.mutable_accepted_value();
+    assert(nullptr != entry);
+    *entry = value;
+}
+
+void set_accepted_value(
+        const paxos::Entry& value, paxos::HardState& hs)
+{
+    auto entry = hs.mutable_accepted_value();
+    assert(nullptr != entry);
+    *entry = value;
+}
+
 void updateRspVotes(
         uint64_t peer_id, bool vote, 
         std::map<uint64_t, bool>& rsp_votes)
@@ -53,22 +69,25 @@ PaxosInstanceImpl::PaxosInstanceImpl(int major_cnt, uint64_t prop_num)
 
 PaxosInstanceImpl::PaxosInstanceImpl(
         int major_cnt, 
-        uint64_t prop_num, 
-        uint64_t promised_num, 
-        uint64_t accepted_num, 
-        const std::string& accepted_value, 
         PropState prop_state, 
-        uint32_t store_seq)
+        const paxos::HardState& hs)
     : major_cnt_(major_cnt)
-    , prop_num_gen_(prop_num)
+    , prop_num_gen_(hs.proposed_num())
     , prop_state_(prop_state)
-    , promised_num_(promised_num)
-    , accepted_num_(accepted_num)
-    , accepted_value_(accepted_value)
     , active_proposer_time_(chrono::system_clock::now())
-    , store_seq_(store_seq)
+    , store_seq_(hs.seq())
 {
+    if (hs.has_promised_num()) {
+        promised_num_ = hs.promised_num();
+    }
 
+    if (hs.has_accepted_num()) {
+        accepted_num_ = hs.accepted_num();
+    }
+
+    if (hs.has_accepted_value()) {
+        accepted_value_ = hs.accepted_value();
+    }
 }
 
 
@@ -94,7 +113,8 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             auto next_prop_state = stepPrepareRsp(
                     msg.proposed_num(), msg.from(), 
                     msg.promised_num(), msg.accepted_num(), 
-                    msg.accepted_value());
+                    msg.has_accepted_value() ? 
+                        &msg.accepted_value() : nullptr);
             rsp_msg_type = updatePropState(next_prop_state);
             logdebug("%s next_prop_state %d rsp_msg_type %d", 
                     __func__, static_cast<int>(next_prop_state), 
@@ -111,7 +131,7 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             }
 
             assert(PropState::WAIT_ACCEPT == prop_state_);
-            assert(true == msg.accepted_value().empty());
+            assert(false == msg.has_accepted_value());
             auto next_prop_state = stepAcceptRsp(
                     msg.proposed_num(), msg.from(), msg.accepted_num(), 
                     MessageType::FAST_ACCPT_RSP == msg.type());
@@ -183,11 +203,14 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
                 break;
             }
 
+            setStrictPropFlag(); // mark as strict prop
             assert(PropState::NIL == prop_state_);
             assert(0ull == getPromisedNum());
             assert(0ull == getAcceptedNum());
-            setStrictPropFlag(); // mark as strict prop
 
+            assert(0ull < getProposeNum());
+            assert(true == msg.has_accepted_value());
+            assert(0 == msg.accepted_value().eid());
             auto next_prop_state = 
                 stepBeginPropose(
                         msg.proposed_num(), msg.accepted_value());
@@ -222,6 +245,10 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
             assert(0ull == getPromisedNum());
             assert(0ull == getAcceptedNum());
             setStrictPropFlag(); // mark as strict prop
+
+            assert(0ull < getProposeNum());
+            assert(true == msg.has_accepted_value());
+            assert(0 == msg.accepted_value().eid());
 
             // => skip prepare phase 
             auto next_prop_state = 
@@ -293,7 +320,7 @@ PaxosInstanceImpl::produceRsp(
         if (req_msg.proposed_num() == rsp_msg->promised_num()) {
             // promised 
             rsp_msg->set_accepted_num(getAcceptedNum());
-            rsp_msg->set_accepted_value(getAcceptedValue());
+            set_accepted_value(getAcceptedValue(), *rsp_msg);
         }
     }
         break;
@@ -309,7 +336,7 @@ PaxosInstanceImpl::produceRsp(
             rsp_msg->set_proposed_num(getProposeNum());
         }
 
-        rsp_msg->set_accepted_value(getAcceptedValue());
+        set_accepted_value(getAcceptedValue(), *rsp_msg);
         rsp_msg->set_to(0ull);
     }
         break;
@@ -333,7 +360,7 @@ PaxosInstanceImpl::produceRsp(
             rsp_msg->set_promised_num(getPromisedNum());
             rsp_msg->set_accepted_num(getAcceptedNum());
             if (rsp_msg->accepted_num() != req_msg.accepted_num()) {
-                rsp_msg->set_accepted_value(getAcceptedValue());
+                set_accepted_value(getAcceptedValue(), *rsp_msg);
             }
 
             // broad cast
@@ -441,14 +468,17 @@ PropState PaxosInstanceImpl::stepTryPropose(uint64_t hint_proposed_num)
 
 PropState PaxosInstanceImpl::stepBeginPropose(
         uint64_t hint_proposed_num, 
-        const std::string& proposing_value)
+        const paxos::Entry& proposing_value)
 {
     assert(PropState::NIL == prop_state_);
     assert(0ull == promised_num_);
 
+    prop_num_gen_.Update(hint_proposed_num);
     prop_state_ = PropState::PREPARE;
     proposing_value_ = proposing_value;
-    prop_num_gen_.Update(hint_proposed_num);
+    assert(0 == proposing_value_.eid());
+    proposing_value_.set_eid(getProposeNum());
+    assert(0 < proposing_value_.eid());
     return PropState::PREPARE;
 }
 
@@ -493,7 +523,7 @@ PropState PaxosInstanceImpl::stepPrepareRsp(
         uint64_t peer_id, 
         uint64_t peer_promised_num, 
         uint64_t peer_accepted_num, 
-        const std::string& peer_accepted_value)
+        const paxos::Entry* peer_accepted_value)
 {
     assert(0 < peer_id);
     assert(0 < major_cnt_);
@@ -509,10 +539,10 @@ PropState PaxosInstanceImpl::stepPrepareRsp(
             max_proposed_num >= peer_promised_num, rsp_votes_);
     if (max_proposed_num >= peer_promised_num) {
         // peer promised
-        if (!peer_accepted_value.empty()) {
+        if (nullptr != peer_accepted_value) {
             if (peer_accepted_num > max_accepted_hint_num_) {
                 max_accepted_hint_num_ = peer_accepted_num;
-                proposing_value_ = peer_accepted_value;
+                proposing_value_ = *peer_accepted_value;
                 clearStrictPropFlag();
             }
         }
@@ -582,7 +612,7 @@ bool PaxosInstanceImpl::updatePromised(uint64_t prop_num)
 
 bool PaxosInstanceImpl::updateAccepted(
         uint64_t prop_num, 
-        const std::string& prop_value, 
+        const paxos::Entry& prop_value, 
         bool is_fast_accept)
 {
     active_proposer_time_ = chrono::system_clock::now();
@@ -608,7 +638,8 @@ bool PaxosInstanceImpl::updateAccepted(
 }
 
 bool 
-PaxosInstanceImpl::isTimeout(const std::chrono::milliseconds& timeout) const
+PaxosInstanceImpl::isTimeout(
+        const std::chrono::milliseconds& timeout) const
 {
     return active_proposer_time_ + 
         timeout < std::chrono::system_clock::now();
@@ -623,16 +654,10 @@ PaxosInstance::PaxosInstance(int major_cnt, uint64_t prop_num)
 
 PaxosInstance::PaxosInstance(
         int major_cnt, 
-        uint64_t proposed_num, 
-        uint64_t promised_num, 
-        uint64_t accepted_num, 
-        const std::string& accepted_value, 
         PropState prop_state, 
-        uint32_t store_seq)
+        const paxos::HardState& hs)
     : ins_impl_(
-            major_cnt, proposed_num, 
-            promised_num, accepted_num, 
-            accepted_value, prop_state, store_seq)
+            major_cnt, prop_state, hs)
 {
 
 }
@@ -673,7 +698,7 @@ PaxosInstance::GetPendingHardState(
     hs->set_promised_num(GetPromisedNum());
     hs->set_accepted_num(GetAcceptedNum());
     if (0ull != GetAcceptedNum()) {
-        hs->set_accepted_value(GetAcceptedValue());
+        set_accepted_value(GetAcceptedValue(), *hs);
     }
 
     hs->set_seq(GetPendingSeq());

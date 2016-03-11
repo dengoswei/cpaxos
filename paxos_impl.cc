@@ -120,9 +120,7 @@ std::unique_ptr<PaxosInstance>
 PaxosImpl::BuildPaxosInstance(const HardState& hs, PropState prop_state)
 {
     const int major_cnt = static_cast<int>(group_ids_.size()) / 2 + 1;
-    auto new_ins = make_unique<PaxosInstance>(
-            major_cnt, hs.proposed_num(), hs.promised_num(), 
-            hs.accepted_num(), hs.accepted_value(), prop_state, hs.seq());
+    auto new_ins = make_unique<PaxosInstance>(major_cnt, prop_state, hs);
     assert(nullptr != new_ins);
     return new_ins;
 }

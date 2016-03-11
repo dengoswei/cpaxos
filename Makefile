@@ -20,7 +20,7 @@ PROTOC = /Users/dengoswei/project/bin/protoc
 all: $(TESTS)
 
 clean :
-	rm -f $(TESTS) *.o cpaxospb/*.o cpaxospb/paxos.pb.* test/*.o
+	rm -f $(TESTS) *.o cpaxospb/*.o cpaxospb/paxos.pb.* test/*.o libcpaxos.a
 
 libcpaxos.a: paxos.o paxos_impl.o paxos_instance.o cpaxospb/paxos.pb.o
 	$(ARSTATICLIB)
