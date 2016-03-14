@@ -3,12 +3,14 @@
 #include <tuple>
 #include <string>
 #include <algorithm>
+#include <memory>
 #include <random>
 #include <chrono>
 #include <limits>
 #include <cstdio>
 #include <cassert>
 #include <stdint.h>
+#define __STDC_FORMAT_MACROS 1
 #include <inttypes.h>
 
 

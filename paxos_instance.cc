@@ -319,8 +319,10 @@ PaxosInstanceImpl::produceRsp(
         assert(rsp_msg->promised_num() >= rsp_msg->proposed_num());
         if (req_msg.proposed_num() == rsp_msg->promised_num()) {
             // promised 
-            rsp_msg->set_accepted_num(getAcceptedNum());
-            set_accepted_value(getAcceptedValue(), *rsp_msg);
+            if (0ull != getAcceptedNum()) {
+                rsp_msg->set_accepted_num(getAcceptedNum());
+                set_accepted_value(getAcceptedValue(), *rsp_msg);
+            }
         }
     }
         break;
