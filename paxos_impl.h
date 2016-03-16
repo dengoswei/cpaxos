@@ -4,6 +4,7 @@
 #include <string>
 #include <set>
 #include <map>
+#include <deque>
 #include <memory>
 #include <functional>
 #include <cassert>
@@ -19,6 +20,8 @@ class PaxosInstance;
 
 enum class PropState : uint8_t;
 
+extern const size_t MAX_INS_SIZE;
+
 // NOT thread safe;
 class PaxosImpl {
 
@@ -27,6 +30,13 @@ public:
         uint64_t logid, 
         uint64_t selfid, 
         const std::set<uint64_t>& group_ids);
+
+    PaxosImpl(
+        uint64_t logid, 
+        uint64_t selfid, 
+        const std::set<uint64_t>& group_ids, 
+        const std::deque<std::unique_ptr<paxos::HardState>>& hs_deque, 
+        bool all_index_commited);
 
     // NOTICE:
     // over-come std::unque_ptr uncomplete type;
@@ -72,9 +82,7 @@ private:
     uint64_t commited_index_ = 0;
     uint64_t next_commited_index_ = 0;
 
-    uint64_t store_seq_ = 0;
-
-    std::set<uint64_t> chosen_set_;
+    // std::set<uint64_t> chosen_set_;
     std::map<uint64_t, std::unique_ptr<PaxosInstance>> ins_map_;
 };
 

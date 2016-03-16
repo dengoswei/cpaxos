@@ -1,7 +1,9 @@
 #include "utils.h"
 #include "gtest/gtest.h"
+#include "random_utils.h"
 
 using namespace paxos;
+using cutils::RandomStrGen;
 
 TEST(TestPropNumGen, SimpleTest)
 {

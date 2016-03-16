@@ -4,10 +4,15 @@
 #include "paxos_impl.h"
 #include "paxos_instance.h"
 #include "utils.h"
+#include "mem_utils.h"
+#include "random_utils.h"
+#include "log.h"
 
 
 using namespace std;
 using namespace paxos;
+using cutils::random_int;
+using cutils::RandomStrGen;
 
 namespace test {
 
@@ -124,7 +129,7 @@ std::map<uint64_t, std::unique_ptr<paxos::PaxosImpl>>
 {
     map<uint64_t, unique_ptr<PaxosImpl>> map_paxos;
     for (auto id : group_ids) {
-        auto paxos = make_unique<PaxosImpl>(logid, id, group_ids);
+        auto paxos = cutils::make_unique<PaxosImpl>(logid, id, group_ids);
         assert(nullptr != paxos);
         assert(paxos->GetSelfId() == id);
         assert(paxos->GetLogId() == logid);
@@ -140,7 +145,7 @@ std::map<uint64_t, std::unique_ptr<paxos::PaxosImpl>>
 std::unique_ptr<paxos::Message> 
 buildMsgProp(uint64_t logid, uint64_t to, uint64_t index)
 {
-    auto msg = make_unique<Message>();
+    auto msg = cutils::make_unique<Message>();
     assert(nullptr != msg);
 
     msg->set_logid(logid);
@@ -203,19 +208,19 @@ int StorageHelper::write(std::unique_ptr<paxos::HardState> hs)
     return 0;
 }
 
-std::unique_ptr<paxos::HardState>
+std::tuple<int, std::unique_ptr<paxos::HardState>>
 StorageHelper::read_nolock(const std::string& key) const
 {
     assert(false == key.empty());
     if (logs_.end() == logs_.find(key)) {
-        return nullptr;
+        return make_tuple(1, nullptr);
     }
 
     assert(nullptr != logs_.at(key));
-    return make_unique<HardState>(*(logs_.at(key)));
+    return make_tuple(0, cutils::make_unique<HardState>(*(logs_.at(key))));
 }
 
-std::unique_ptr<paxos::HardState>
+std::tuple<int, std::unique_ptr<paxos::HardState>>
 StorageHelper::read(uint64_t logid, uint64_t log_index)
 {
     assert(0ull < log_index);
@@ -312,7 +317,7 @@ build_paxos(
         assert(map_storage.end() == map_storage.find(id));
         assert(map_paxos.end() == map_paxos.find(id));
 
-        auto ustorage = make_unique<StorageHelper>(disk_fail_ratio);
+        auto ustorage = cutils::make_unique<StorageHelper>(disk_fail_ratio);
         assert(nullptr != ustorage);
         auto storage = ustorage.get();
         assert(nullptr != storage);
@@ -320,7 +325,7 @@ build_paxos(
         PaxosCallBack callback;
         callback.read = 
             [=](uint64_t logid, uint64_t index) 
-                -> std::unique_ptr<HardState> {
+                -> std::tuple<int, std::unique_ptr<HardState>> {
             
                 return storage->read(logid, index);
             };
@@ -335,7 +340,7 @@ build_paxos(
                 return sender.send(move(msg));
             };
 
-        auto paxos = make_unique<Paxos>(logid, id, group_ids, callback);
+        auto paxos = cutils::make_unique<Paxos>(logid, id, group_ids, callback);
         assert(nullptr != paxos);
 
         map_storage[id] = move(ustorage);

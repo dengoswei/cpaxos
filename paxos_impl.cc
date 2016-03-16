@@ -2,15 +2,24 @@
 #include "paxos_impl.h"
 #include "paxos_instance.h"
 #include "utils.h"
+#include "mem_utils.h"
+#include "log.h"
+#include "hassert.h"
 
 
 using namespace std;
+
+namespace paxos {
+
+const size_t MAX_INS_SIZE = 5; // TODO: config option ?
+
+} // namespace paxos
 
 namespace {
 
 using namespace paxos;
 
-const size_t MAX_INS_SIZE = 5; // TODO: config option ?
+
 
 std::unique_ptr<PaxosInstance> buildPaxosInstance(
         size_t group_size, uint64_t selfid, uint64_t prop_cnt)
@@ -22,7 +31,7 @@ std::unique_ptr<PaxosInstance> buildPaxosInstance(
     uint64_t prop_num = prop_num_compose(selfid, prop_cnt); 
     assert(0 < prop_num);
     
-    auto new_ins = make_unique<PaxosInstance>(major_cnt, prop_num);
+    auto new_ins = cutils::make_unique<PaxosInstance>(major_cnt, prop_num);
     assert(nullptr != new_ins);
     return new_ins;
 }
@@ -40,7 +49,7 @@ batchBuildMsg(
             continue;
         }
 
-        auto msg = make_unique<Message>(msg_template);
+        auto msg = cutils::make_unique<Message>(msg_template);
         assert(nullptr != msg);
         msg->set_to(id);
         vec_msg.emplace_back(move(msg));
@@ -64,7 +73,7 @@ batchBuildMsg(
             continue;
         }
 
-        auto msg = make_unique<Message>(*rsp_msg);
+        auto msg = cutils::make_unique<Message>(*rsp_msg);
         assert(nullptr != msg);
         msg->set_to(id);
         vec_msg.emplace_back(move(msg));
@@ -105,6 +114,42 @@ PaxosImpl::PaxosImpl(
     assert(group_ids_.end() != group_ids_.find(selfid_));
 }
 
+PaxosImpl::PaxosImpl(
+        uint64_t logid, 
+        uint64_t selfid, 
+        const std::set<uint64_t>& group_ids, 
+        const std::deque<std::unique_ptr<paxos::HardState>>& hs_deque, 
+        bool all_index_commited)
+    : logid_(logid)
+    , selfid_(selfid)
+    , group_ids_(group_ids)
+{
+    assert(0ull < selfid_);
+    assert(selfid_ < (1ull << 8));
+    assert(group_ids_.end() != group_ids_.find(selfid_));
+
+    max_index_ = hs_deque.empty() ? 0ull : hs_deque.back()->index();
+    commited_index_ = all_index_commited ? max_index_ : max_index_ -1;
+    assert(commited_index_ <= max_index_);
+    next_commited_index_ = commited_index_;
+    for (auto& hs : hs_deque) {
+        assert(nullptr != hs);
+        auto prop_state = PropState::CHOSEN;
+        if (hs->index() == max_index_ && !all_index_commited) {
+            prop_state = PropState::NIL;
+        }
+
+        auto ins = cutils::make_unique<PaxosInstance>(
+                group_ids_.size() / 2 + 1, prop_state, *hs);
+        assert(nullptr != ins);
+
+        assert(ins_map_.end() == ins_map_.find(hs->index()));
+        ins_map_[hs->index()] = move(ins);
+        assert(nullptr == ins);
+    }
+}
+
+
 PaxosImpl::~PaxosImpl() = default;
 
 uint64_t PaxosImpl::NextProposingIndex()
@@ -120,7 +165,7 @@ std::unique_ptr<PaxosInstance>
 PaxosImpl::BuildPaxosInstance(const HardState& hs, PropState prop_state)
 {
     const int major_cnt = static_cast<int>(group_ids_.size()) / 2 + 1;
-    auto new_ins = make_unique<PaxosInstance>(major_cnt, prop_state, hs);
+    auto new_ins = cutils::make_unique<PaxosInstance>(major_cnt, prop_state, hs);
     assert(nullptr != new_ins);
     return new_ins;
 }
@@ -182,7 +227,7 @@ void PaxosImpl::CommitStep(uint64_t index, uint32_t store_seq)
 
 bool PaxosImpl::UpdateNextCommitedIndex(uint64_t chosen_index) 
 {
-    chosen_set_.insert(chosen_index);
+    // chosen_set_.insert(chosen_index);
     logdebug("selfid %" PRIu64 " mark index %" PRIu64 " as chosen", 
             GetSelfId(), chosen_index);
     if (chosen_index <= next_commited_index_) {

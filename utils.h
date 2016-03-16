@@ -1,62 +1,11 @@
 #pragma once
 
 #include <tuple>
-#include <string>
 #include <algorithm>
-#include <memory>
-#include <random>
-#include <chrono>
-#include <limits>
-#include <cstdio>
 #include <cassert>
 #include <stdint.h>
-#define __STDC_FORMAT_MACROS 1
-#include <inttypes.h>
-
-
-#define hassert(cond, fmt, ...)                     \
-{                                                   \
-    bool bCond = cond;                              \
-    if (!bCond)                                     \
-    {                                               \
-        printf ( fmt "\n", ##__VA_ARGS__ );         \
-    }                                               \
-    assert(bCond);                                  \
-}
-
-namespace {
-
-void log_nothing(const char* /* format */, ...) 
-    __attribute__((format(printf, 1, 2)));
-
-void log_nothing(const char* /* format */, ...) {
-
-}
-
-} // namespace
-
-#ifndef TEST_DEBUG
-
-#define logdebug(format, ...) log_nothing(format, ##__VA_ARGS__)
-#define logerr(format, ...) log_nothing(format, ##__VA_ARGS__)
-
-#else
-
-#define logdebug(format, ...) \
-    printf("[PAXOS DEBUG: %s %s %d] " format "\n", __FILE__, __func__, __LINE__, ##__VA_ARGS__)
-
-#define logerr(format, ...) \
-    printf("[PAXOS ERROR: %s %s %d] " format "\n", __FILE__, __func__, __LINE__, ##__VA_ARGS__)
-
-#endif
 
 namespace paxos {
-
-template<typename T, typename... Args>
-std::unique_ptr<T> make_unique(Args&&... args)
-{
-    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
-}
 
 inline uint64_t prop_num_compose(uint8_t id, uint64_t prop_cnt)
 {
@@ -134,89 +83,6 @@ private:
     uint8_t selfid_;
     uint64_t prop_cnt_;
 };
-
-
-// utils for test
-
-template <typename RNGType,
-         typename INTType,
-         INTType iMin=0, INTType iMax=std::numeric_limits<INTType>::max()>
-class RandomIntGen
-{
-public:
-    RandomIntGen()
-        : m_tMyRNG(std::random_device()())
-        , m_tUDist(iMin, iMax)
-    {
-
-    }
-
-    INTType Next()
-    {
-        return m_tUDist(m_tMyRNG);
-    }
-
-private:
-    RNGType m_tMyRNG;
-    std::uniform_int_distribution<INTType> m_tUDist;
-};
-
-typedef RandomIntGen<std::mt19937_64, uint64_t> Random64BitGen;
-typedef RandomIntGen<std::mt19937, uint32_t> Random32BitGen;
-
-static const char DICTIONARY[] =
-    "0123456789"
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    "abcdefghijklmnopqrstuvwxyz";
-
-
-template <int iMin, int iMax>
-class RandomStrGen
-{
-public:
-    std::string Next()
-    {
-        auto iLen = m_tRLen.Next();
-        std::string s;
-        s.resize(iLen);
-        for (auto i = 0; i < iLen; ++i)
-        {
-            auto j = m_tRIdx.Next();
-            s[i] = DICTIONARY[j];
-            assert(s[i] != '\0');
-        }
-        return s;
-    }
-
-private:
-    RandomIntGen<std::mt19937, int, iMin, iMax> m_tRLen;
-    RandomIntGen<std::mt19937, int, 0, sizeof(DICTIONARY)-2> m_tRIdx;
-};
-
-inline int random_int(int min, int max)
-{
-    // mark as thread local ?
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(min, max);
-    return dis(gen);
-}
-
-
-namespace measure {
-
-template <typename F, typename ...Args>
-inline std::tuple<typename std::result_of<F(Args...)>::type, std::chrono::milliseconds>
-execution(F func, Args&&... args) {
-    auto start = std::chrono::system_clock::now();
-    auto ret = func(std::forward<Args>(args)...);
-    auto duration = std::chrono::duration_cast<
-        std::chrono::milliseconds>(
-                std::chrono::system_clock::now() - start);
-    return std::make_tuple(ret, duration);
-}
-
-} // namespace measure
 
 } // namespace paxos
 

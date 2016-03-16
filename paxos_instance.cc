@@ -1,4 +1,7 @@
 #include "paxos_instance.h"
+#include "mem_utils.h"
+#include "log.h"
+#include "hassert.h"
 
 using namespace std;
 
@@ -299,7 +302,7 @@ PaxosInstanceImpl::produceRsp(
     switch (rsp_msg_type) {
     case MessageType::PROP:
     {
-        rsp_msg = make_unique<Message>(msg_template);
+        rsp_msg = cutils::make_unique<Message>(msg_template);
         assert(nullptr != rsp_msg);
         // update paos_impl:: prop_num_gen_
         rsp_msg->set_proposed_num(getProposeNum());
@@ -311,7 +314,7 @@ PaxosInstanceImpl::produceRsp(
         break;
     case MessageType::PROP_RSP:
     {
-        rsp_msg = make_unique<Message>(msg_template);
+        rsp_msg = cutils::make_unique<Message>(msg_template);
         assert(nullptr != rsp_msg);
         
         assert(MessageType::PROP_RSP == rsp_msg->type());
@@ -329,7 +332,7 @@ PaxosInstanceImpl::produceRsp(
     case MessageType::ACCPT:
     case MessageType::FAST_ACCPT:
     {
-        rsp_msg = make_unique<Message>(msg_template);
+        rsp_msg = cutils::make_unique<Message>(msg_template);
         assert(nullptr != rsp_msg);
 
         if (MessageType::FAST_ACCPT == rsp_msg_type) {
@@ -345,7 +348,7 @@ PaxosInstanceImpl::produceRsp(
     case MessageType::ACCPT_RSP:
     case MessageType::FAST_ACCPT_RSP:
     {
-        rsp_msg = make_unique<Message>(msg_template);
+        rsp_msg = cutils::make_unique<Message>(msg_template);
         assert(nullptr != rsp_msg);
 
         rsp_msg->set_promised_num(getPromisedNum());
@@ -356,7 +359,7 @@ PaxosInstanceImpl::produceRsp(
     {
         // mark index as chosen
         if (MessageType::CHOSEN != req_msg.type()) {
-            rsp_msg= make_unique<Message>(msg_template);
+            rsp_msg= cutils::make_unique<Message>(msg_template);
             assert(nullptr != rsp_msg);
               
             rsp_msg->set_promised_num(getPromisedNum());
@@ -378,7 +381,7 @@ PaxosInstanceImpl::produceRsp(
 
             // rsp_msg for self
             // TODO ?
-            rsp_msg = make_unique<Message>(msg_template);
+            rsp_msg = cutils::make_unique<Message>(msg_template);
             assert(nullptr != rsp_msg);
 
             rsp_msg->set_type(MessageType::CHOSEN);
@@ -691,7 +694,7 @@ PaxosInstance::GetPendingHardState(
         return nullptr; // no pending
     }
 
-    auto hs = make_unique<HardState>();
+    auto hs = cutils::make_unique<HardState>();
     assert(nullptr != hs);
 
     hs->set_logid(logid);

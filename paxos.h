@@ -21,7 +21,9 @@ class HardState;
 
 struct PaxosCallBack {
 
-    std::function<std::unique_ptr<HardState>(uint64_t, uint64_t)> read;
+    std::function<std::tuple<
+        int, std::unique_ptr<HardState>>(uint64_t, uint64_t)> read;
+    // std::function<std::unique_ptr<HardState>(uint64_t, uint64_t)> read;
     std::function<int(std::unique_ptr<HardState>)> write;
 
     std::function<int(std::unique_ptr<Message>)> send;
@@ -34,6 +36,11 @@ public:
     Paxos(
         uint64_t logid, uint64_t selfid, 
         const std::set<uint64_t>& group_ids, PaxosCallBack callback);
+
+    Paxos(
+        uint64_t selfid, 
+        const SnapshotMetadata& meta, 
+        PaxosCallBack callback);
 
     // NOTICE:
     // over-come std::unque_ptr uncomplete type;
@@ -63,6 +70,8 @@ public:
     // return 0: chosen && AcceptedValue().eid() != eid
     // return <0: error case
     int CheckChosen(uint64_t index, uint64_t eid);
+
+    std::unique_ptr<SnapshotMetadata> CreateSnapshotMetadata();
 
 private:
     std::mutex prop_mutex_;

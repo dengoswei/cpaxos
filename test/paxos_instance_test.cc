@@ -3,10 +3,12 @@
 #include "gtest/gtest.h"
 #include "paxos.pb.h"
 #include "test_helper.h"
+#include "random_utils.h"
 
 
 using namespace paxos;
 using test::set_accepted_value;
+using cutils::RandomStrGen;
 
 class PaxosInstanceTest : public ::testing::Test {
 

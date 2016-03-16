@@ -68,11 +68,11 @@ public:
 
     int write(std::unique_ptr<paxos::HardState> hs);
 
-    std::unique_ptr<paxos::HardState> 
+    std::tuple<int, std::unique_ptr<paxos::HardState>>
         read(uint64_t logid, uint64_t log_index);
 
 private:
-    std::unique_ptr<paxos::HardState>
+    std::tuple<int, std::unique_ptr<paxos::HardState>>
         read_nolock(const std::string& key) const;
 
 private:

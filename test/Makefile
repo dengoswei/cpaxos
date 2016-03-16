@@ -7,6 +7,7 @@ TESTS = utils_test paxos_instance_test paxos_test paxos_pb_test \
 		config_test glog_test paxos_impl_test
 
 INCLS += -I../ -I../cpaxospb
+INCLS += -I../../cutils
 INCLS += -I/Users/dengoswei/project/include
 LINKS += -L/Users/dengoswei/project/lib
 LINKS += -lpthread -lprotobuf
@@ -53,7 +54,7 @@ utils_test: utils_test.o gtest_main.a
 	$(BUILDEXE)
 
 paxos_instance_test: paxos_instance_test.o \
-	../paxos_instance.o ../cpaxospb/paxos.pb.o gtest_main.a
+	test_helper.o gtest_main.a ../libcpaxos.a
 	$(BUILDEXE)
 
 paxos_impl_test: paxos_impl_test.o test_helper.o \

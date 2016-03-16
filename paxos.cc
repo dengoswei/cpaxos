@@ -1,4 +1,8 @@
+#include <deque>
 #include "paxos.h"
+#include "mem_utils.h"
+#include "log.h"
+#include "hassert.h"
 
 using namespace std;
 
@@ -9,12 +13,86 @@ Paxos::Paxos(
         uint64_t logid, 
         uint64_t selfid, 
         const std::set<uint64_t>& group_ids, PaxosCallBack callback)
-    : paxos_impl_(make_unique<PaxosImpl>(logid, selfid, group_ids))
+    : paxos_impl_(cutils::make_unique<PaxosImpl>(logid, selfid, group_ids))
     , callback_(callback)
 {
     assert(nullptr != callback_.read);
     assert(nullptr != callback_.write);
     assert(nullptr != callback_.send);
+}
+
+Paxos::Paxos(
+        uint64_t selfid, 
+        const paxos::SnapshotMetadata& meta, 
+        PaxosCallBack callback)
+    : paxos_impl_(nullptr)
+    , callback_(callback)
+{
+    assert(nullptr != callback_.read);
+    assert(nullptr != callback_.write);
+    assert(nullptr != callback_.send);
+
+    std::set<uint64_t> group_ids;
+    {
+        assert(true == meta.has_conf_state());
+        auto& conf_state = meta.conf_state();
+        assert(3 <= conf_state.nodes_size());
+        for (int idx = 0; idx < conf_state.nodes_size(); ++idx) {
+            group_ids.insert(conf_state.nodes(idx));
+        }
+    }
+
+    assert(true == meta.has_logid());
+    if (false == meta.has_max_index()) {
+        // new plog
+        paxos_impl_ = cutils::make_unique<
+            PaxosImpl>(meta.logid(), selfid, group_ids);
+        assert(nullptr != paxos_impl_);
+        assert(0 == paxos_impl_->GetMaxIndex());
+        assert(0 == paxos_impl_->GetCommitedIndex());
+    }
+    else {
+        assert(true == meta.has_max_index());
+        assert(true == meta.has_commited_index());
+        assert(meta.commited_index() <= meta.max_index());
+        int err = 0;
+        std::unique_ptr<paxos::HardState> hs = nullptr;
+        uint64_t index = meta.max_index();
+
+        std::deque<std::unique_ptr<paxos::HardState>> hs_deque;
+        for (; true; ++index) {
+            assert(0 == err);
+            assert(nullptr == hs);
+            tie(err, hs) = callback_.read(meta.logid(), index);
+            if (0 != err) {
+                assert(nullptr == hs);
+                assert(1 == err);
+                break;
+            }
+            assert(0 == err);
+            assert(nullptr != hs);
+            assert(hs->index() == index);
+            assert(hs->logid() == meta.logid());
+            hs_deque.push_back(move(hs));
+            assert(nullptr == hs);
+            if (MAX_INS_SIZE < hs_deque.size()) {
+                hs_deque.pop_front();
+            }
+        }
+
+        assert(0 <= index);
+        index = 0 == index ? index : index - 1;
+        assert(index >= meta.max_index());
+        // TODO
+        paxos_impl_ = cutils::make_unique<PaxosImpl>(
+                meta.logid(), selfid, group_ids, 
+                hs_deque, meta.commited_index() == index);
+        assert(nullptr != paxos_impl_);
+        assert(index == paxos_impl_->GetMaxIndex());
+        assert(index >= paxos_impl_->GetCommitedIndex());
+    }
+
+    assert(nullptr != paxos_impl_);
 }
 
 
@@ -98,13 +176,18 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
                 // re-construct disk_ins
                 auto group_size = paxos_impl_->GetGroupIds().size();
                 lock.unlock();
-                auto chosen_hs = callback_.read(msg.logid(), index);
-                if (nullptr == chosen_hs) {
-                    logerr("read index %" PRIu64 " nullptr", index);
+                int err = 0;
+                std::unique_ptr<HardState> chosen_hs = nullptr;
+                tie(err, chosen_hs) = callback_.read(msg.logid(), index);
+                if (0 != err) {
+                    assert(nullptr == chosen_hs);
+                    logerr("read index %" PRIu64 " err %d", index, err);
                     return paxos::ErrorCode::STORAGE_READ_ERROR;
                 }
 
-                disk_ins = make_unique<PaxosInstance>(
+                assert(0 == err);
+                assert(nullptr != chosen_hs);
+                disk_ins = cutils::make_unique<PaxosInstance>(
                         group_size / 2 + 1, PropState::CHOSEN, *chosen_hs);
                 assert(nullptr != disk_ins);
                 lock.lock();
@@ -291,6 +374,28 @@ int Paxos::CheckChosen(uint64_t index, uint64_t eid)
     }
 
     return 1;
+}
+
+std::unique_ptr<SnapshotMetadata> Paxos::CreateSnapshotMetadata()
+{
+    std::lock_guard<std::mutex> lock(paxos_mutex_);
+    assert(nullptr != paxos_impl_);
+    
+    auto meta = cutils::make_unique<SnapshotMetadata>();
+    assert(nullptr != meta);
+
+    meta->set_logid(paxos_impl_->GetLogId());
+    meta->set_max_index(paxos_impl_->GetMaxIndex());
+    meta->set_commited_index(paxos_impl_->GetCommitedIndex());
+    auto conf_state = meta->mutable_conf_state();
+    assert(nullptr != conf_state);
+
+    for (auto node_id : paxos_impl_->GetGroupIds()) {
+        conf_state->add_nodes(node_id);
+    }
+
+    assert(conf_state->nodes_size() == paxos_impl_->GetGroupIds().size());
+    return meta;
 }
 
 } // namespace paxos

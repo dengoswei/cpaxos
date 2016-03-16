@@ -1,13 +1,19 @@
+#include <deque>
 #include "gtest/gtest.h"
 #include "paxos.pb.h"
 #include "test_helper.h"
 #include "paxos_instance.h"
 #include "paxos_impl.h"
+#include "mem_utils.h"
+#include "hassert.h"
+#include "log.h"
+#include "random_utils.h"
 
 
 using namespace std;
 using namespace paxos;
 using namespace test;
+using cutils::RandomStrGen;
 
 TEST(PaxosImplTest, SimpleConstruct)
 {
@@ -16,7 +22,7 @@ TEST(PaxosImplTest, SimpleConstruct)
 
     auto selfid = 1ull;
     assert(group_ids.end() != group_ids.find(selfid));
-    auto paxos = make_unique<PaxosImpl>(logid, selfid, group_ids);
+    auto paxos = cutils::make_unique<PaxosImpl>(logid, selfid, group_ids);
     assert(nullptr != paxos);
     assert(paxos->GetSelfId() == selfid);
     assert(paxos->GetLogId() == logid);
@@ -514,6 +520,112 @@ TEST(PaxosImplTest, PropTestWithMsgDrop)
                 " accepted_value.size %zu prop_value.size %zu", 
                 prop_index, iter_count, ins->GetAcceptedValue().data().size(), 
                 prop_value.size());
+    }
+}
+
+TEST(PaxosImplTest, SimpleHSDeque)
+{
+    auto logid = LOGID;
+    auto group_ids = GROUP_IDS;
+
+    auto selfid = 1ull;
+
+    deque<unique_ptr<HardState>> hs_deque;
+    auto paxos = cutils::make_unique<PaxosImpl>(logid, selfid, group_ids, hs_deque, true);
+    assert(nullptr != paxos);
+
+    assert(0ull == paxos->GetMaxIndex());
+    assert(0ull == paxos->GetCommitedIndex());
+    assert(selfid == paxos->GetSelfId());
+    assert(LOGID == paxos->GetLogId());
+    assert(group_ids == paxos->GetGroupIds());
+}
+
+TEST(PaxosImplTest, HSDequeConstructTest)
+{
+    auto logid = LOGID;
+    auto group_ids = GROUP_IDS;
+    auto selfid = 1ull;
+
+    auto test_index = 10ull;
+
+    RandomStrGen<10, 50> tRGen;
+    deque<unique_ptr<HardState>> hs_deque;
+    for (uint64_t index = 2ull; index <= test_index; ++index) {
+        auto hs = cutils::make_unique<HardState>();
+        hs->set_index(index);
+        hs->set_logid(logid);
+        hs->set_proposed_num(
+                prop_num_compose(static_cast<uint8_t>(selfid), 0ull));
+        hs->set_promised_num(hs->proposed_num());
+        hs->set_accepted_num(hs->proposed_num());
+        hs->set_seq(1ull);
+        {
+            auto entry = hs->mutable_accepted_value();
+            assert(nullptr != entry);
+            entry->set_type(paxos::EntryType::EntryNormal);
+            entry->set_eid(hs->proposed_num());
+            entry->set_data(tRGen.Next());
+        }
+
+        hs_deque.push_back(move(hs));
+        assert(nullptr == hs);
+    }
+
+    // case 1
+    {
+        auto paxos = cutils::make_unique<PaxosImpl>(
+                logid, selfid, group_ids, hs_deque, false);
+        assert(nullptr != paxos);
+
+        assert(test_index == paxos->GetMaxIndex());
+        assert(test_index-1 == paxos->GetCommitedIndex());
+
+        assert(nullptr == paxos->GetInstance(hs_deque.front()->index()-1, false));
+        for (auto& hs : hs_deque) {
+            assert(nullptr != hs);
+            auto ins = paxos->GetInstance(hs->index(), false);
+            assert(nullptr != ins);
+            assert((hs->index() != test_index) == ins->IsChosen());
+            assert(0 == ins->GetPendingSeq());
+
+            assert(hs->proposed_num() == ins->GetProposeNum());
+            assert(hs->promised_num() == ins->GetPromisedNum());
+            assert(hs->accepted_num() == ins->GetAcceptedNum());
+            assert(true == hs->has_accepted_value());
+            assert(hs->accepted_value().type() == ins->GetAcceptedValue().type());
+            assert(hs->accepted_value().eid() == ins->GetAcceptedValue().eid());
+            assert(hs->accepted_value().data() == ins->GetAcceptedValue().data());
+        }
+        assert(nullptr == paxos->GetInstance(test_index+1, false));
+    }
+
+    // case 2
+    {
+        auto paxos = cutils::make_unique<PaxosImpl>(
+                logid, selfid, group_ids, hs_deque, true);
+        assert(nullptr != paxos);
+
+        assert(test_index == paxos->GetMaxIndex());
+        assert(test_index == paxos->GetCommitedIndex());
+
+        assert(nullptr == paxos->GetInstance(hs_deque.front()->index()-1, false));
+        for (auto& hs : hs_deque) {
+            assert(nullptr != hs);
+            auto ins = paxos->GetInstance(hs->index(), false);
+            assert(nullptr != ins);
+            assert(true == ins->IsChosen());
+            assert(0 == ins->GetPendingSeq());
+
+            assert(hs->proposed_num() == ins->GetProposeNum());
+            assert(hs->promised_num() == ins->GetPromisedNum());
+            assert(hs->accepted_num() == ins->GetAcceptedNum());
+            assert(true == hs->has_accepted_value());
+            assert(hs->accepted_value().type() == ins->GetAcceptedValue().type());
+            assert(hs->accepted_value().eid() == ins->GetAcceptedValue().eid());
+            assert(hs->accepted_value().data() == ins->GetAcceptedValue().data());
+        }
+        assert(nullptr == paxos->GetInstance(test_index+1, false));
     }
 }
 

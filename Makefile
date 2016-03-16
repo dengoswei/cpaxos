@@ -6,6 +6,7 @@ TESTS = utils_test paxos_instance_test paxos_test paxos_pb_test config_test glog
 
 INCLS += -I./cpaxospb/
 INCLS += -I/Users/dengoswei/project/include
+INCLS += -I../cutils/
 LINKS += -L/Users/dengoswei/project/lib
 LINKS += -lpthread -lprotobuf
 
