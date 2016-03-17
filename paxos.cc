@@ -36,14 +36,14 @@ Paxos::Paxos(
     {
         assert(true == meta.has_conf_state());
         auto& conf_state = meta.conf_state();
-        assert(3 <= conf_state.nodes_size());
         for (int idx = 0; idx < conf_state.nodes_size(); ++idx) {
             group_ids.insert(conf_state.nodes(idx));
         }
     }
 
+    assert(false == group_ids.empty());
     assert(true == meta.has_logid());
-    if (false == meta.has_max_index()) {
+    if (false == meta.has_commited_index()) {
         // new plog
         paxos_impl_ = cutils::make_unique<
             PaxosImpl>(meta.logid(), selfid, group_ids);
@@ -52,12 +52,10 @@ Paxos::Paxos(
         assert(0 == paxos_impl_->GetCommitedIndex());
     }
     else {
-        assert(true == meta.has_max_index());
         assert(true == meta.has_commited_index());
-        assert(meta.commited_index() <= meta.max_index());
         int err = 0;
         std::unique_ptr<paxos::HardState> hs = nullptr;
-        uint64_t index = meta.max_index();
+        uint64_t index = meta.commited_index();
 
         std::deque<std::unique_ptr<paxos::HardState>> hs_deque;
         for (; true; ++index) {
@@ -81,8 +79,9 @@ Paxos::Paxos(
         }
 
         assert(0 <= index);
+        assert(0 == index || index > meta.commited_index());
         index = 0 == index ? index : index - 1;
-        assert(index >= meta.max_index());
+        assert(index >= meta.commited_index());
         // TODO
         paxos_impl_ = cutils::make_unique<PaxosImpl>(
                 meta.logid(), selfid, group_ids, 
@@ -90,6 +89,7 @@ Paxos::Paxos(
         assert(nullptr != paxos_impl_);
         assert(index == paxos_impl_->GetMaxIndex());
         assert(index >= paxos_impl_->GetCommitedIndex());
+        assert(meta.commited_index() <= paxos_impl_->GetCommitedIndex());
     }
 
     assert(nullptr != paxos_impl_);
@@ -385,7 +385,6 @@ std::unique_ptr<SnapshotMetadata> Paxos::CreateSnapshotMetadata()
     assert(nullptr != meta);
 
     meta->set_logid(paxos_impl_->GetLogId());
-    meta->set_max_index(paxos_impl_->GetMaxIndex());
     meta->set_commited_index(paxos_impl_->GetCommitedIndex());
     auto conf_state = meta->mutable_conf_state();
     assert(nullptr != conf_state);

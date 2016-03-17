@@ -326,7 +326,6 @@ TEST(PaxosTest, EmptySnapshotMeta)
         assert(true == meta.has_conf_state());
     }
 
-    meta.set_max_index(0);
     meta.set_commited_index(0);
     
     auto selfid = 1ull;
@@ -359,7 +358,6 @@ TEST(PaxosTest, EmptySnapshotMeta)
     assert(true == new_meta->has_conf_state());
     AssertCheckConfState(new_meta->conf_state(), meta.conf_state());
     assert(LOGID == new_meta->logid());
-    assert(0 == new_meta->max_index());
     assert(0 == new_meta->commited_index());
 }
 
@@ -410,7 +408,6 @@ TEST(PaxosTest, SnapshotMetadataConstruct)
         *(meta.mutable_conf_state()) = conf_state;
 
         auto test_index = 10ull;
-        meta.set_max_index(test_index);
         meta.set_commited_index(test_index);
         callback.read = simple_read_cb;
 
@@ -426,7 +423,6 @@ TEST(PaxosTest, SnapshotMetadataConstruct)
         assert(true == new_meta->has_conf_state());
         AssertCheckConfState(new_meta->conf_state(), conf_state);
         assert(LOGID == new_meta->logid());
-        assert(test_index == new_meta->max_index());
         assert(test_index == new_meta->commited_index());
     }
 
@@ -439,7 +435,6 @@ TEST(PaxosTest, SnapshotMetadataConstruct)
         *(meta.mutable_conf_state()) = conf_state;
 
         auto test_index = 10ull;
-        meta.set_max_index(0);
         meta.set_commited_index(0);
         callback.read = simple_read_cb;
 
@@ -456,7 +451,6 @@ TEST(PaxosTest, SnapshotMetadataConstruct)
         assert(true == new_meta->has_conf_state());
         AssertCheckConfState(new_meta->conf_state(), conf_state);
         assert(LOGID == new_meta->logid());
-        assert(test_index == new_meta->max_index());
         assert(test_index - 1 == new_meta->commited_index());
     }
 }
