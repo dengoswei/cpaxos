@@ -6,7 +6,7 @@
 #include "paxos_impl.h"
 #include "mem_utils.h"
 #include "hassert.h"
-#include "log.h"
+#include "log_utils.h"
 #include "random_utils.h"
 
 

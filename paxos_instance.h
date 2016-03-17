@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string>
 #include <map>
+#include <memory>
 #include <chrono>
 #include "utils.h"
 #include "paxos.pb.h"

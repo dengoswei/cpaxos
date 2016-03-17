@@ -1,6 +1,6 @@
 #include "paxos_instance.h"
 #include "mem_utils.h"
-#include "log.h"
+#include "log_utils.h"
 #include "hassert.h"
 
 using namespace std;

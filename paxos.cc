@@ -1,7 +1,7 @@
 #include <deque>
 #include "paxos.h"
 #include "mem_utils.h"
-#include "log.h"
+#include "log_utils.h"
 #include "hassert.h"
 
 using namespace std;
@@ -56,6 +56,7 @@ Paxos::Paxos(
         int err = 0;
         std::unique_ptr<paxos::HardState> hs = nullptr;
         uint64_t index = meta.commited_index();
+		index = max(uint64_t{1}, index);
 
         std::deque<std::unique_ptr<paxos::HardState>> hs_deque;
         for (; true; ++index) {
@@ -78,9 +79,9 @@ Paxos::Paxos(
             }
         }
 
-        assert(0 <= index);
-        assert(0 == index || index > meta.commited_index());
-        index = 0 == index ? index : index - 1;
+		assert(1 <= index);
+		assert(index > meta.commited_index());
+		--index;
         assert(index >= meta.commited_index());
         // TODO
         paxos_impl_ = cutils::make_unique<PaxosImpl>(
@@ -393,7 +394,8 @@ std::unique_ptr<SnapshotMetadata> Paxos::CreateSnapshotMetadata()
         conf_state->add_nodes(node_id);
     }
 
-    assert(conf_state->nodes_size() == paxos_impl_->GetGroupIds().size());
+    assert(static_cast<size_t>(
+				conf_state->nodes_size()) == paxos_impl_->GetGroupIds().size());
     return meta;
 }
 

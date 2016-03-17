@@ -3,7 +3,7 @@
 #include "paxos_instance.h"
 #include "utils.h"
 #include "mem_utils.h"
-#include "log.h"
+#include "log_utils.h"
 #include "hassert.h"
 
 

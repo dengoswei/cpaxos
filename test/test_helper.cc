@@ -6,7 +6,7 @@
 #include "utils.h"
 #include "mem_utils.h"
 #include "random_utils.h"
-#include "log.h"
+#include "log_utils.h"
 
 
 using namespace std;
