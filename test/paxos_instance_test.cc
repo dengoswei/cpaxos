@@ -1,4 +1,3 @@
-#include "utils.h"
 #include "paxos_instance.h"
 #include "gtest/gtest.h"
 #include "paxos.pb.h"

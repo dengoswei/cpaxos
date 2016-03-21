@@ -10,7 +10,6 @@
 #include <cassert>
 #include <stdint.h>
 #include "paxos.pb.h"
-#include "utils.h"
 
 
 namespace paxos {

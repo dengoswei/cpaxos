@@ -7,7 +7,6 @@
 #include <functional>
 #include <chrono>
 #include <stdint.h>
-#include "utils.h"
 #include "paxos_instance.h"
 #include "paxos_impl.h"
 #include "paxos.pb.h"

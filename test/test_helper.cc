@@ -3,7 +3,6 @@
 #include "paxos.h"
 #include "paxos_impl.h"
 #include "paxos_instance.h"
-#include "utils.h"
 #include "mem_utils.h"
 #include "random_utils.h"
 #include "log_utils.h"

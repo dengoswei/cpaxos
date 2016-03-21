@@ -1,6 +1,5 @@
 #include <string>
 #include "paxos.pb.h"
-#include "utils.h"
 #include "gtest/gtest.h"
 
 
