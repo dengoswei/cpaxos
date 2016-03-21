@@ -213,7 +213,7 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
 
             assert(0ull < getProposeNum());
             assert(true == msg.has_accepted_value());
-            assert(0 == msg.accepted_value().eid());
+            // assert(0 == msg.accepted_value().eid());
             auto next_prop_state = 
                 stepBeginPropose(
                         msg.proposed_num(), msg.accepted_value());
@@ -251,7 +251,7 @@ MessageType PaxosInstanceImpl::step(const Message& msg)
 
             assert(0ull < getProposeNum());
             assert(true == msg.has_accepted_value());
-            assert(0 == msg.accepted_value().eid());
+            // assert(0 == msg.accepted_value().eid());
 
             // => skip prepare phase 
             auto next_prop_state = 
@@ -481,9 +481,9 @@ PropState PaxosInstanceImpl::stepBeginPropose(
     prop_num_gen_.Update(hint_proposed_num);
     prop_state_ = PropState::PREPARE;
     proposing_value_ = proposing_value;
-    assert(0 == proposing_value_.eid());
-    proposing_value_.set_eid(getProposeNum());
-    assert(0 < proposing_value_.eid());
+    // assert(0 == proposing_value_.eid());
+    // proposing_value_.set_eid(getProposeNum());
+    // assert(0 < proposing_value_.eid());
     return PropState::PREPARE;
 }
 

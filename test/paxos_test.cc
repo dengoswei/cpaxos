@@ -3,11 +3,13 @@
 #include "test_helper.h"
 #include "paxos.h"
 #include "mem_utils.h"
+#include "id_utils.h"
 
 
 using namespace std;
 using namespace paxos;
 using namespace test;
+using cutils::prop_num_compose;
 
 
 void AssertCheckConfState(
@@ -112,17 +114,14 @@ TEST(PaxosTest, SimplePropose)
 
     auto err = paxos::ErrorCode::OK;
     auto prop_index = 0ull;
-    auto eid = 0ull;
-    tie(err, prop_index, eid) = paxos->Propose(0ull, prop_value);
+    tie(err, prop_index) = paxos->Propose(0ull, prop_value);
     assert(paxos::ErrorCode::OK == err);
     assert(0ull < prop_index);
-    assert(0ull < eid);
 
     // 0. retry other propose failed
     {
         auto new_prop_index = 0ull;
-        auto new_eid = 0ull;
-        tie(err, new_prop_index, new_eid) = paxos->Propose(0ull, "");
+        tie(err, new_prop_index) = paxos->Propose(0ull, "");
         assert(paxos::ErrorCode::BUSY == err);
     }
 
@@ -178,13 +177,11 @@ TEST(PaxosTest, FastProp)
 
     auto err = paxos::ErrorCode::OK;
     auto prop_index = 1ull;
-    auto eid = 0ull;
     // 1. prop => chosen
     {
-        tie(err, prop_index, eid) = paxos->Propose(0ull, genPropValue());
+        tie(err, prop_index) = paxos->Propose(0ull, genPropValue());
         assert(paxos::ErrorCode::OK == err);
         assert(0ull < prop_index);
-        assert(0ull < eid);
 
         auto count = sender.apply_until(map_paxos);
         assert(5 == count);
@@ -197,11 +194,9 @@ TEST(PaxosTest, FastProp)
     for (int i = 0; i < 10; ++i) {
         assert(true == sender.empty());
         auto prop_value = genPropValue();
-        eid = 0ull;
-        tie(err, prop_index, eid) = paxos->Propose(0ull, prop_value);
+        tie(err, prop_index) = paxos->Propose(0ull, prop_value);
         assert(paxos::ErrorCode::OK == err);
         assert(0ull < prop_index);
-        assert(0ull< eid);
         assert(paxos->GetCommitedIndex() + 1ull == prop_index);
 
         auto count = sender.apply_until(map_paxos);
@@ -237,11 +232,9 @@ TEST(PaxosTest, RandomIterPropose)
         auto err = paxos::ErrorCode::OK;
         auto prop_index = 0ull;
         auto prop_value = genPropValue();
-        auto eid = 0ull;
-        tie(err, prop_index, eid) = paxos->Propose(0ull, prop_value);
+        tie(err, prop_index) = paxos->Propose(0ull, prop_value);
         assert(paxos::ErrorCode::OK == err);
         assert(0ull < prop_index);
-        assert(0ull < eid);
         assert(paxos->GetCommitedIndex() < prop_index);
 
         auto count = sender.apply_until(map_paxos);
@@ -273,9 +266,8 @@ TEST(PaxosTest, PropTestWithMsgDrop)
         auto prop_value = genPropValue();
         auto err = paxos::ErrorCode::OK;
         auto prop_index = 0ull;
-        auto eid = 0ull;
             
-        tie(err, prop_index, eid) = paxos->Propose(0ull, prop_value);
+        tie(err, prop_index) = paxos->Propose(0ull, prop_value);
         while (true) {
             if (0ull == prop_index) {
                 // possible write error:
@@ -302,8 +294,7 @@ TEST(PaxosTest, PropTestWithMsgDrop)
             assert(nullptr != peer_paxos);
             
             auto peer_prop_index = 0ull;
-            auto peer_eid = 0ull;
-            tie(err, peer_prop_index, peer_eid) = peer_paxos->Propose(0ull, "");
+            tie(err, peer_prop_index) = peer_paxos->Propose(0ull, "");
             if (paxos::ErrorCode::OK != err || 
                     peer_prop_index > prop_index) {
                 err = paxos->CheckAndFixTimeout(chrono::milliseconds{0});
@@ -407,7 +398,6 @@ TEST(PaxosTest, SnapshotMetadataConstruct)
         assert(nullptr != meta.mutable_conf_state());
         *(meta.mutable_conf_state()) = conf_state;
 
-        auto test_index = 10ull;
         meta.set_commited_index(test_index);
         callback.read = simple_read_cb;
 
@@ -434,7 +424,6 @@ TEST(PaxosTest, SnapshotMetadataConstruct)
         assert(nullptr != meta.mutable_conf_state());
         *(meta.mutable_conf_state()) = conf_state;
 
-        auto test_index = 10ull;
         meta.set_commited_index(0);
         callback.read = simple_read_cb;
 

@@ -6,6 +6,7 @@
 #include <memory>
 #include <chrono>
 #include "utils.h"
+#include "id_utils.h"
 #include "paxos.pb.h"
 
 // public
@@ -44,7 +45,7 @@ public:
     uint64_t getProposeNum() const { return prop_num_gen_.Get(); }
     uint64_t getPromisedNum() const { return promised_num_; }
     uint64_t getAcceptedNum() const { return accepted_num_; }
-    uint64_t getProposeEID() const { return proposing_value_.eid(); }
+    // uint64_t getProposeEID() const { return proposing_value_.eid(); }
 
     const paxos::Entry& getAcceptedValue() const {
         return accepted_value_; 
@@ -112,7 +113,7 @@ public:
 
 private:
     const int major_cnt_ = 0;
-    paxos::PropNumGen prop_num_gen_;
+    cutils::PropNumGen prop_num_gen_;
 
     PropState prop_state_ = PropState::NIL; 
 
@@ -160,7 +161,7 @@ public:
         return ins_impl_.getPropState();
     }
 
-    uint64_t GetProposeEID() const { return ins_impl_.getProposeEID(); }
+    // uint64_t GetProposeEID() const { return ins_impl_.getProposeEID(); }
     uint64_t GetProposeNum() const { return ins_impl_.getProposeNum(); }
     uint64_t GetPromisedNum() const { return ins_impl_.getPromisedNum(); }
     uint64_t GetAcceptedNum() const { return ins_impl_.getAcceptedNum(); }

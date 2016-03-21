@@ -8,12 +8,15 @@
 #include "hassert.h"
 #include "log_utils.h"
 #include "random_utils.h"
+#include "id_utils.h"
 
 
 using namespace std;
 using namespace paxos;
 using namespace test;
 using cutils::RandomStrGen;
+using cutils::prop_num_compose;
+
 
 TEST(PaxosImplTest, SimpleConstruct)
 {
@@ -564,7 +567,6 @@ TEST(PaxosImplTest, HSDequeConstructTest)
             auto entry = hs->mutable_accepted_value();
             assert(nullptr != entry);
             entry->set_type(paxos::EntryType::EntryNormal);
-            entry->set_eid(hs->proposed_num());
             entry->set_data(tRGen.Next());
         }
 
@@ -594,7 +596,6 @@ TEST(PaxosImplTest, HSDequeConstructTest)
             assert(hs->accepted_num() == ins->GetAcceptedNum());
             assert(true == hs->has_accepted_value());
             assert(hs->accepted_value().type() == ins->GetAcceptedValue().type());
-            assert(hs->accepted_value().eid() == ins->GetAcceptedValue().eid());
             assert(hs->accepted_value().data() == ins->GetAcceptedValue().data());
         }
         assert(nullptr == paxos->GetInstance(test_index+1, false));
@@ -622,7 +623,6 @@ TEST(PaxosImplTest, HSDequeConstructTest)
             assert(hs->accepted_num() == ins->GetAcceptedNum());
             assert(true == hs->has_accepted_value());
             assert(hs->accepted_value().type() == ins->GetAcceptedValue().type());
-            assert(hs->accepted_value().eid() == ins->GetAcceptedValue().eid());
             assert(hs->accepted_value().data() == ins->GetAcceptedValue().data());
         }
         assert(nullptr == paxos->GetInstance(test_index+1, false));

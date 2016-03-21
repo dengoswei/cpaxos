@@ -46,8 +46,8 @@ public:
     // over-come std::unque_ptr uncomplete type;
     ~Paxos();
 
-    // err, index, eid
-    std::tuple<paxos::ErrorCode, uint64_t, uint64_t>
+    // err, index
+    std::tuple<paxos::ErrorCode, uint64_t>
         Propose(uint64_t index, const std::string& proposing_value);
 
     paxos::ErrorCode Step(const Message& msg);
@@ -66,10 +66,10 @@ public:
 
     bool IsChosen(uint64_t index);
 
-    // return 1: chosen && AcceptedValue().eid() == eid
-    // return 0: chosen && AcceptedValue().eid() != eid
-    // return <0: error case
-    int CheckChosen(uint64_t index, uint64_t eid);
+//    // return 1: chosen && AcceptedValue().eid() == eid
+//    // return 0: chosen && AcceptedValue().eid() != eid
+//    // return <0: error case
+//    int CheckChosen(uint64_t index, uint64_t eid);
 
     std::unique_ptr<SnapshotMetadata> CreateSnapshotMetadata();
 

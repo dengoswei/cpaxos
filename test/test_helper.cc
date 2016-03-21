@@ -7,12 +7,14 @@
 #include "mem_utils.h"
 #include "random_utils.h"
 #include "log_utils.h"
+#include "id_utils.h"
 
 
 using namespace std;
 using namespace paxos;
 using cutils::random_int;
 using cutils::RandomStrGen;
+using cutils::prop_num_decompose;
 
 namespace test {
 

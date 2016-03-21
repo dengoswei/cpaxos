@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "mem_utils.h"
 #include "log_utils.h"
+#include "id_utils.h"
 #include "hassert.h"
 
 
@@ -28,7 +29,7 @@ std::unique_ptr<PaxosInstance> buildPaxosInstance(
     assert(0 < major_cnt);
     assert(0 < selfid);
     
-    uint64_t prop_num = prop_num_compose(selfid, prop_cnt); 
+    uint64_t prop_num = cutils::prop_num_compose(selfid, prop_cnt); 
     assert(0 < prop_num);
     
     auto new_ins = cutils::make_unique<PaxosInstance>(major_cnt, prop_num);

@@ -4,11 +4,13 @@
 #include "paxos.pb.h"
 #include "test_helper.h"
 #include "random_utils.h"
+#include "id_utils.h"
 
 
 using namespace paxos;
 using test::set_accepted_value;
 using cutils::RandomStrGen;
+using cutils::prop_num_compose;
 
 class PaxosInstanceTest : public ::testing::Test {
 
