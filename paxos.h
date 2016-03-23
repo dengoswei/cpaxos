@@ -23,9 +23,12 @@ struct PaxosCallBack {
     std::function<std::tuple<
         int, std::unique_ptr<HardState>>(uint64_t, uint64_t)> read;
     // std::function<std::unique_ptr<HardState>(uint64_t, uint64_t)> read;
-    std::function<int(std::unique_ptr<HardState>)> write;
+    //
+    std::function<int(const std::vector<std::unique_ptr<HardState>>&)> write;
+    // std::function<int(std::unique_ptr<HardState>)> write;
 
-    std::function<int(std::unique_ptr<Message>)> send;
+    std::function<int(std::vector<std::unique_ptr<Message>>)> send;
+    // std::function<int(std::unique_ptr<Message>)> send;
 };
 
 
@@ -47,7 +50,10 @@ public:
 
     // err, index
     std::tuple<paxos::ErrorCode, uint64_t>
-        Propose(uint64_t index, const std::string& proposing_value);
+        Propose(
+                uint64_t index, 
+                uint64_t reqid, 
+                const std::string& proposing_value);
 
     paxos::ErrorCode Step(const Message& msg);
 
@@ -65,12 +71,19 @@ public:
 
     bool IsChosen(uint64_t index);
 
-//    // return 1: chosen && AcceptedValue().eid() == eid
-//    // return 0: chosen && AcceptedValue().eid() != eid
-//    // return <0: error case
-//    int CheckChosen(uint64_t index, uint64_t eid);
+    // return 1: chosen && AcceptedValue().reqid() == reqid
+    // return 0: chosen && AcceptedValue().reqid() != reqid
+    // return <0: error case
+    int CheckChosen(uint64_t index, uint64_t reqid);
 
     std::unique_ptr<SnapshotMetadata> CreateSnapshotMetadata();
+
+
+private:
+    std::tuple<
+        std::vector<std::unique_ptr<paxos::HardState>>, 
+        std::vector<std::unique_ptr<paxos::Message>>>
+    CheckTimeoutNoLock(uint64_t exclude_index, std::chrono::milliseconds& timeout);
 
 private:
     std::mutex prop_mutex_;

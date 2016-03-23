@@ -8,6 +8,8 @@ using namespace std;
 
 namespace paxos {
 
+std::chrono::milliseconds PAXOS_TIMEOUT{100};
+
 
 Paxos::Paxos(
         uint64_t logid, 
@@ -100,7 +102,10 @@ Paxos::Paxos(
 Paxos::~Paxos() = default;
 
 std::tuple<paxos::ErrorCode, uint64_t>
-Paxos::Propose(const uint64_t index, const std::string& proposing_value)
+Paxos::Propose(
+        const uint64_t index, 
+        const uint64_t reqid, 
+        const std::string& proposing_value)
 {
     Message prop_msg;
     prop_msg.set_type(MessageType::BEGIN_PROP);
@@ -110,6 +115,7 @@ Paxos::Propose(const uint64_t index, const std::string& proposing_value)
         assert(nullptr != prop_entry);
         prop_entry->set_type(EntryType::EntryNormal);
         prop_entry->set_data(proposing_value);
+        prop_entry->set_reqid(reqid);
     }
 
     std::lock_guard<std::mutex> prop_lock(prop_mutex_);
@@ -142,21 +148,13 @@ Paxos::Propose(const uint64_t index, const std::string& proposing_value)
     }
 
     return std::make_tuple(paxos::ErrorCode::OK, prop_msg.index());
-//
-//    {
-//        std::lock_guard<std::mutex> lock(paxos_mutex_);
-//        auto ins = paxos_impl_->GetInstance(prop_msg.index(), false);
-//        assert(nullptr != ins);
-//        auto eid = ins->GetProposeEID();
-//        assert(0 < eid);
-//        return std::make_tuple(paxos::ErrorCode::OK, prop_msg.index(), eid);
-//    }
 }
 
 paxos::ErrorCode Paxos::Step(const Message& msg)
 {
     uint64_t prev_commit_index = 0;
-    std::unique_ptr<HardState> hs;
+    // TODO
+    std::vector<std::unique_ptr<HardState>> vec_hs;
     std::vector<std::unique_ptr<Message>> vec_msg;
 
     uint64_t index = msg.index();
@@ -201,49 +199,59 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
             ::paxos::Step(*paxos_impl_, msg, disk_ins.get());
         vec_msg = ProduceRsp(
                 *paxos_impl_, msg, rsp_msg_type, disk_ins.get());
+
+        std::unique_ptr<HardState> hs = nullptr;
         if (nullptr == disk_ins.get()) {
             auto ins = paxos_impl_->GetInstance(index, false);
-            assert(nullptr != ins);
-            hs = ins->GetPendingHardState(paxos_impl_->GetLogId(), index);
+            if (nullptr != ins) {
+                hs = ins->GetPendingHardState(paxos_impl_->GetLogId(), index);
+            }
         }
+
+        vector<unique_ptr<Message>> vec_try_prop_msg;
+        tie(vec_hs, vec_try_prop_msg) = 
+            CheckTimeoutNoLock(msg.index(), PAXOS_TIMEOUT);
+
+        if (nullptr != hs) {
+            vec_hs.push_back(move(hs));
+        }
+
+        vec_msg.reserve(vec_msg.size() + vec_try_prop_msg.size());
+        for_each(vec_try_prop_msg.begin(), vec_try_prop_msg.end(), 
+                [&](unique_ptr<Message>& try_prop_msg) {
+                    assert(nullptr != try_prop_msg);
+                    vec_msg.push_back(move(try_prop_msg));
+                    assert(nullptr == try_prop_msg);
+                });
+        vec_try_prop_msg.clear();
     }
 
     // 2.
     int ret = 0;
-    uint64_t store_seq = nullptr == hs ? 0ull : hs->seq();
-    if (nullptr != hs) {
-        ret = callback_.write(move(hs)); 
+    if (false == vec_hs.empty()) {
+        ret = callback_.write(vec_hs);
         if (0 != ret) {
-            logdebug("callback_.write index %" PRIu64 " ret %d", 
-                    msg.index(), ret);
+            logerr("callback_.write index %" PRIu64 " vec_hs.size %zu ret %d", 
+                    msg.index(), vec_hs.size(), ret);
             return paxos::ErrorCode::STORAGE_WRITE_ERROR;
         }
     }
 
     assert(0 == ret);
     if (false == vec_msg.empty()) {
-        for (auto& rsp_msg : vec_msg) {
-            assert(nullptr != rsp_msg);
-            assert(0ull != rsp_msg->to());
-
-            auto rsp_msg_type = rsp_msg->type();
-            ret = callback_.send(move(rsp_msg));
-            if (0 != ret) {
-                logdebug("callback_.send index %" PRIu64 
-                        " msg type %d ret %d", 
-                        msg.index(), 
-                        static_cast<int>(rsp_msg_type), ret);
-            }
-            assert(nullptr == rsp_msg);
+        ret = callback_.send(move(vec_msg));
+        if (0 != ret) {
+            logdebug("callback_.send index %" PRIu64 " vec_msg.size %zu ret %d", 
+                    msg.index(), vec_msg.size(), ret);
         }
-
-        vec_msg.clear();
+        assert(true == vec_msg.empty());
     }
 
     bool update = false;
     {
         std::lock_guard<std::mutex> lock(paxos_mutex_);
-        paxos_impl_->CommitStep(index, store_seq);
+        paxos_impl_->CommitStep(index, vec_hs);
+        // paxos_impl_->CommitStep(index, store_seq);
         if (prev_commit_index < paxos_impl_->GetCommitedIndex()) {
             update = true;
         }
@@ -259,6 +267,77 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
 
     return paxos::ErrorCode::OK;
 }
+
+std::tuple<
+    std::vector<std::unique_ptr<paxos::HardState>>, 
+    std::vector<std::unique_ptr<paxos::Message>>>
+Paxos::CheckTimeoutNoLock(
+        uint64_t exclude_index, std::chrono::milliseconds& timeout)
+{
+    vector<unique_ptr<HardState>> vec_hs;
+    vector<unique_ptr<Message>> vec_msg;
+    for (uint64_t index = paxos_impl_->GetCommitedIndex() + 1;
+            index <= paxos_impl_->GetMaxIndex(); ++index) {
+        if (index == exclude_index) {
+            continue;
+        }
+
+        auto ins = paxos_impl_->GetInstance(index, false);
+        if (nullptr != ins) {
+            // check timeout
+            if (true == ins->IsChosen() ||
+                    false == ins->IsTimeout(timeout)) {
+                continue;
+            }
+            // else => timeout
+        }
+        else {
+            assert(nullptr == ins);
+            ins = paxos_impl_->GetInstance(index, true);
+            assert(nullptr != ins);
+        }
+
+        assert(nullptr != ins);
+        Message try_prop_msg;
+        try_prop_msg.set_type(MessageType::TRY_PROP);
+        {
+            auto entry = try_prop_msg.mutable_accepted_value();
+            assert(nullptr != entry);
+            entry->set_type(EntryType::EntryNormal);
+        }
+
+        try_prop_msg.set_logid(paxos_impl_->GetLogId());
+        try_prop_msg.set_to(paxos_impl_->GetSelfId());
+        try_prop_msg.set_index(index);
+
+        auto rsp_msg_type = 
+            ::paxos::Step(*paxos_impl_, try_prop_msg, nullptr);
+        auto new_vec_msg = ProduceRsp(
+                *paxos_impl_, try_prop_msg, rsp_msg_type, nullptr);
+        logerr("TIMEOUT!! rsp_msg_type %d new_vec_msg.size %zu", 
+                static_cast<int>(rsp_msg_type), new_vec_msg.size());
+        hassert(false == new_vec_msg.empty(), "commited_index %" PRIu64 
+                " max_index %" PRIu64 " rsp_msg_type %d new_vec_msg.size %zu", 
+                paxos_impl_->GetCommitedIndex(), paxos_impl_->GetMaxIndex(),
+                static_cast<int>(rsp_msg_type), new_vec_msg.size());
+
+        vec_msg.reserve(vec_msg.size() + new_vec_msg.size());
+        for_each(new_vec_msg.begin(), new_vec_msg.end(), 
+                [&](std::unique_ptr<Message>& msg) {
+                    assert(nullptr != msg);
+                    vec_msg.push_back(move(msg));
+                    assert(nullptr == msg);
+                });
+
+        auto hs = ins->GetPendingHardState(paxos_impl_->GetLogId(), index);
+        assert(nullptr != hs);
+        vec_hs.push_back(move(hs));
+        assert(nullptr == hs);
+    }
+
+    return make_tuple(move(vec_hs), move(vec_msg));
+}
+
 
 paxos::ErrorCode Paxos::CheckAndFixTimeout(
         const std::chrono::milliseconds& timeout)
@@ -356,28 +435,27 @@ bool Paxos::IsChosen(uint64_t index)
     return index <= paxos_impl_->GetCommitedIndex(); 
 }
 
-//int Paxos::CheckChosen(uint64_t index, uint64_t eid)
-//{
-//    assert(0ull < index);
-//    assert(0ull < eid);
-//    std::lock_guard<std::mutex> lock(paxos_mutex_);
-//    if (index > paxos_impl_->GetCommitedIndex()) {
-//        return -1;
-//    }
-//
-//    auto ins = paxos_impl_->GetInstance(index, false);
-//    if (nullptr == ins) {
-//        return -2;
-//    }
-//
-//    assert(nullptr != ins);
-//    assert(true == ins->IsChosen());
-//    if (ins->GetAcceptedValue().eid() != eid) {
-//        return 0;
-//    }
-//
-//    return 1;
-//}
+int Paxos::CheckChosen(uint64_t index, uint64_t reqid)
+{
+    assert(0ull < index);
+    std::lock_guard<std::mutex> lock(paxos_mutex_);
+    if (index > paxos_impl_->GetCommitedIndex()) {
+        return -1;
+    }
+
+    auto ins = paxos_impl_->GetInstance(index, false);
+    if (nullptr == ins) {
+        return -2;
+    }
+
+    assert(nullptr != ins);
+    assert(true == ins->IsChosen());
+    if (ins->GetAcceptedValue().reqid() != reqid) {
+        return 0;
+    }
+
+    return 1;
+}
 
 std::unique_ptr<SnapshotMetadata> Paxos::CreateSnapshotMetadata()
 {

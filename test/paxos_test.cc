@@ -114,14 +114,16 @@ TEST(PaxosTest, SimplePropose)
 
     auto err = paxos::ErrorCode::OK;
     auto prop_index = 0ull;
-    tie(err, prop_index) = paxos->Propose(0ull, prop_value);
+    auto reqid = 0ull;
+    tie(err, prop_index) = paxos->Propose(0ull, reqid, prop_value);
     assert(paxos::ErrorCode::OK == err);
     assert(0ull < prop_index);
 
     // 0. retry other propose failed
     {
         auto new_prop_index = 0ull;
-        tie(err, new_prop_index) = paxos->Propose(0ull, "");
+        auto new_reqid = 0ull;
+        tie(err, new_prop_index) = paxos->Propose(0ull, new_reqid, "");
         assert(paxos::ErrorCode::BUSY == err);
     }
 
@@ -177,9 +179,10 @@ TEST(PaxosTest, FastProp)
 
     auto err = paxos::ErrorCode::OK;
     auto prop_index = 1ull;
+    auto reqid = 1ull;
     // 1. prop => chosen
     {
-        tie(err, prop_index) = paxos->Propose(0ull, genPropValue());
+        tie(err, prop_index) = paxos->Propose(0ull, reqid, genPropValue());
         assert(paxos::ErrorCode::OK == err);
         assert(0ull < prop_index);
 
@@ -194,7 +197,7 @@ TEST(PaxosTest, FastProp)
     for (int i = 0; i < 10; ++i) {
         assert(true == sender.empty());
         auto prop_value = genPropValue();
-        tie(err, prop_index) = paxos->Propose(0ull, prop_value);
+        tie(err, prop_index) = paxos->Propose(0ull, reqid, prop_value);
         assert(paxos::ErrorCode::OK == err);
         assert(0ull < prop_index);
         assert(paxos->GetCommitedIndex() + 1ull == prop_index);
@@ -222,6 +225,7 @@ TEST(PaxosTest, RandomIterPropose)
     tie(map_storage, map_paxos) = 
         build_paxos(logid, group_ids, sender, 0);
 
+    auto reqid = 2ull;
     for (auto i = 0; i < 10; ++i) {
         auto prop_id = i % (group_ids.size()) + 1ull;
         assert(0ull < prop_id);
@@ -232,7 +236,7 @@ TEST(PaxosTest, RandomIterPropose)
         auto err = paxos::ErrorCode::OK;
         auto prop_index = 0ull;
         auto prop_value = genPropValue();
-        tie(err, prop_index) = paxos->Propose(0ull, prop_value);
+        tie(err, prop_index) = paxos->Propose(0ull, reqid, prop_value);
         assert(paxos::ErrorCode::OK == err);
         assert(0ull < prop_index);
         assert(paxos->GetCommitedIndex() < prop_index);
@@ -262,12 +266,13 @@ TEST(PaxosTest, PropTestWithMsgDrop)
     auto selfid = 1ull;
     auto& paxos = map_paxos[selfid];
     assert(nullptr != paxos);
-    for (int i = 0; i < 20; ++i) {
+    for (int i = 0; i < 30; ++i) {
         auto prop_value = genPropValue();
         auto err = paxos::ErrorCode::OK;
         auto prop_index = 0ull;
             
-        tie(err, prop_index) = paxos->Propose(0ull, prop_value);
+        auto reqid = 0ull;
+        tie(err, prop_index) = paxos->Propose(0ull, reqid, prop_value);
         while (true) {
             if (0ull == prop_index) {
                 // possible write error:
@@ -294,13 +299,85 @@ TEST(PaxosTest, PropTestWithMsgDrop)
             assert(nullptr != peer_paxos);
             
             auto peer_prop_index = 0ull;
-            tie(err, peer_prop_index) = peer_paxos->Propose(0ull, "");
+            tie(err, peer_prop_index) = peer_paxos->Propose(0ull, reqid, "");
             if (paxos::ErrorCode::OK != err || 
                     peer_prop_index > prop_index) {
                 err = paxos->CheckAndFixTimeout(chrono::milliseconds{0});
                 continue;
             }
         }
+
+        for (auto id : group_ids) {
+            auto& peer_paxos = map_paxos[id];
+            assert(nullptr != peer_paxos);
+
+            if (true == peer_paxos->IsChosen(prop_index)) {
+                continue;
+            }
+
+            while (false == peer_paxos->IsChosen(prop_index)) {
+                auto err = peer_paxos->CheckAndFixTimeout(chrono::milliseconds{0});
+                sender.apply_until(map_paxos);
+            }
+        }
+    }
+}
+
+TEST(PaxosTest, ProposeCatchUp)
+{
+    auto logid = LOGID;
+    auto group_ids = GROUP_IDS;
+
+    auto selfid = 1ul;
+    SendHelper sender{0};
+    map<uint64_t, unique_ptr<StorageHelper>> map_storage;
+    map<uint64_t, unique_ptr<Paxos>> map_paxos;
+
+    tie(map_storage, map_paxos) = 
+        build_paxos(logid, group_ids, sender, 0);
+    assert(map_paxos.size() == group_ids.size());
+    assert(map_storage.size() == group_ids.size());
+
+    auto& paxos = map_paxos[selfid];
+    assert(nullptr != paxos);
+
+    auto peer_id = 2ull;
+    auto peer_paxos = move(map_paxos[peer_id]);
+    assert(nullptr != peer_paxos);
+    assert(nullptr == map_paxos[peer_id]);
+
+    uint64_t reqid = 1ull;
+    auto err = paxos::ErrorCode::OK;
+    uint64_t prop_index = 0;
+    for (int i = 0; i < 15; ++i) {
+        assert(true == sender.empty());
+        auto prop_value = genPropValue();
+        tie(err, prop_index) = paxos->Propose(0ull, reqid, prop_value);
+        assert(paxos::ErrorCode::OK == err);
+        assert(0ull < prop_index);
+        assert(paxos->GetCommitedIndex() + 1ull == prop_index);
+
+        sender.apply_until(map_paxos);
+    }
+
+    map_paxos[peer_id] = move(peer_paxos);
+    assert(nullptr != map_paxos[peer_id]);
+    assert(nullptr == peer_paxos);
+    for (int i = 0; i < 20; ++i) {
+        assert(true == sender.empty());
+        auto prop_value = genPropValue();
+        tie(err, prop_index) = paxos->Propose(0ull, reqid, prop_value);
+        assert(paxos::ErrorCode::OK == err);
+        assert(0ull < prop_index);
+        assert(paxos->GetCommitedIndex() + 1ull == prop_index);
+
+        sender.apply_until(map_paxos);
+    }
+
+    for (auto peer_id : group_ids) {
+        auto& peer_paxos = map_paxos[peer_id];
+        assert(peer_paxos->GetMaxIndex() == peer_paxos->GetCommitedIndex());
+        assert(paxos->GetCommitedIndex() == peer_paxos->GetCommitedIndex());
     }
 }
 
@@ -327,12 +404,14 @@ TEST(PaxosTest, EmptySnapshotMeta)
 
             return make_tuple(1, nullptr);
         };
+
     callback.write = 
-        [](std::unique_ptr<HardState> hs) -> int {
+        [](const std::vector<std::unique_ptr<HardState>>& vec_hs) -> int {
             return 0;
         };
+
     callback.send = 
-        [](std::unique_ptr<Message> msg) -> int {
+        [](std::vector<std::unique_ptr<Message>> vec_msg) -> int {
             return 0;
         };
 
@@ -361,12 +440,12 @@ TEST(PaxosTest, SnapshotMetadataConstruct)
 
     PaxosCallBack callback;
     callback.write = 
-        [](std::unique_ptr<HardState> hs) -> int {
+        [](const std::vector<std::unique_ptr<HardState>>& vec_hs) -> int {
             return 0;
         };
 
     callback.send = 
-        [](std::unique_ptr<Message> msg) -> int {
+        [](std::vector<std::unique_ptr<Message>> vec_msg) -> int {
             return 0;
         };
 

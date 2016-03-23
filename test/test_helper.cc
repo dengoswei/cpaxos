@@ -209,6 +209,42 @@ int StorageHelper::write(std::unique_ptr<paxos::HardState> hs)
     return 0;
 }
 
+int StorageHelper::write(
+        const std::vector<std::unique_ptr<paxos::HardState>>& vec_hs)
+{
+    if (true == vec_hs.empty()) {
+        return 0;
+    }
+
+    assert(false == vec_hs.empty());
+    bool disk_fail = btest(disk_fail_ratio_);
+    if (true == disk_fail) {
+        logdebug("DISK FAIL vec_hs.size %zu", vec_hs.size());
+        return -1;
+    }
+
+    for (auto& hs : vec_hs) {
+        auto cpy_hs = cutils::make_unique<paxos::HardState>(*hs);
+        assert(nullptr != cpy_hs);
+
+        auto key = makeKey(cpy_hs->logid(), cpy_hs->index());
+        lock_guard<mutex> lock(mutex_);
+        if (logs_.end() != logs_.find(key)) {
+            const auto& prev_hs = logs_.at(key);
+            assert(nullptr != prev_hs);
+            if (prev_hs->seq() >= cpy_hs->seq()) {
+                return 0; 
+            }
+        }
+
+        logs_[key] = move(cpy_hs);
+        assert(nullptr == cpy_hs);
+        assert(nullptr != logs_.at(key));
+    }
+
+    return 0;
+}
+
 std::tuple<int, std::unique_ptr<paxos::HardState>>
 StorageHelper::read_nolock(const std::string& key) const
 {
@@ -245,6 +281,28 @@ int SendHelper::send(std::unique_ptr<paxos::Message> msg)
     lock_guard<mutex> lock(queue_mutex_);
     msg_queue_.push_back(move(msg));
     assert(nullptr == msg);
+    return 0;
+}
+
+int SendHelper::send(std::vector<std::unique_ptr<paxos::Message>> vec_msg)
+{
+    if (true == vec_msg.empty()) {
+        return 0;
+    }
+
+    bool drop = btest(drop_ratio_);
+    if (true == drop) {
+        logdebug("DROP vec_msg.size %zu", vec_msg.size());
+        return -1;
+    }
+
+    lock_guard<mutex> lock(queue_mutex_);
+    for (auto& msg : vec_msg) {
+        assert(nullptr != msg);
+        msg_queue_.push_back(move(msg));
+        assert(nullptr == msg);
+    }
+
     return 0;
 }
 
@@ -332,13 +390,14 @@ build_paxos(
             };
 
         callback.write = 
-            [=](std::unique_ptr<HardState> hs) -> int {
-                return storage->write(move(hs));
+            [=](const std::vector<std::unique_ptr<HardState>>& vec_hs) 
+                -> int {
+                return storage->write(vec_hs);
             };
 
         callback.send = 
-            [&](std::unique_ptr<Message> msg) -> int {
-                return sender.send(move(msg));
+            [&](std::vector<std::unique_ptr<Message>> vec_msg) -> int {
+                return sender.send(move(vec_msg));
             };
 
         auto paxos = cutils::make_unique<Paxos>(logid, id, group_ids, callback);

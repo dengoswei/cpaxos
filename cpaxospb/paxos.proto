@@ -54,8 +54,8 @@ enum MessageType {
 
 message Entry {
     required EntryType type  = 1;
-    // optional uint64    eid   = 2;
-    optional bytes     data  = 3;
+    optional bytes     data  = 2;
+    optional uint64    reqid = 3;
 }
 
 message Message {

@@ -469,6 +469,7 @@ TEST(PaxosImplTest, LiveLock)
     }
 }
 
+
 TEST(PaxosImplTest, PropTestWithMsgDrop)
 {
     auto logid = LOGID;
@@ -483,7 +484,7 @@ TEST(PaxosImplTest, PropTestWithMsgDrop)
 
     // test times
     const int drop_ratio = 40;
-    for (int i = 0; i < 20; ++i) {
+    for (int i = 0; i < 30; ++i) {
         string prop_value;
         vector<unique_ptr<Message>> vec_msg;
         auto prop_index = paxos->NextProposingIndex();
@@ -523,6 +524,24 @@ TEST(PaxosImplTest, PropTestWithMsgDrop)
                 " accepted_value.size %zu prop_value.size %zu", 
                 prop_index, iter_count, ins->GetAcceptedValue().data().size(), 
                 prop_value.size());
+
+        for (auto id : group_ids) {
+            auto& peer_paxos = map_paxos[id];
+            assert(nullptr != peer_paxos);
+
+            if (true == peer_paxos->IsChosen(prop_index)) {
+                continue;
+            }
+
+            while (false == peer_paxos->IsChosen(prop_index)) {
+                prop_msg = buildMsgProp(logid, id, prop_index);
+                assert(nullptr != prop_msg);
+                prop_msg->set_type(MessageType::TRY_PROP);
+                vec_msg.clear();
+                vec_msg.emplace_back(move(prop_msg));
+                apply_until(map_paxos, move(vec_msg), 10, iter_drop_ratio);
+            }
+        }
     }
 }
 

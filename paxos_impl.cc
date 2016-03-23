@@ -11,7 +11,7 @@ using namespace std;
 
 namespace paxos {
 
-const size_t MAX_INS_SIZE = 5; // TODO: config option ?
+const size_t MAX_INS_SIZE = 10; // TODO: config option ?
 
 } // namespace paxos
 
@@ -183,6 +183,12 @@ PaxosInstance* PaxosImpl::GetInstance(uint64_t index, bool create)
             return nullptr; // don't re-create
         }
 
+        if (commited_index_ + MAX_INS_SIZE < index) {
+            max_index_ = max(max_index_, commited_index_ + MAX_INS_SIZE);
+            return nullptr;
+        }
+
+        assert(commited_index_ + MAX_INS_SIZE >= index);
         // need build a new paxos instance
         auto new_ins = 
             buildPaxosInstance(group_ids_.size(), selfid_, 0ull);
@@ -222,6 +228,35 @@ void PaxosImpl::CommitStep(uint64_t index, uint32_t store_seq)
     logdebug("INFO index %" PRIu64 " store_seq %d commited_index %" PRIu64 
             " next_commited_index_ %" PRIu64, 
             index, store_seq, commited_index_, next_commited_index_);
+    commited_index_ = next_commited_index_;
+}
+
+void PaxosImpl::CommitStep(
+        uint64_t index, 
+        const std::vector<std::unique_ptr<paxos::HardState>>& vec_hs)
+{
+    for (auto& hs : vec_hs) {
+        assert(nullptr != hs);
+        assert(0 < hs->seq());
+        assert(0 < hs->index());
+
+        auto ins = GetInstance(hs->index(), false);
+        if (nullptr != ins) {
+            ins->CommitPendingSeq(hs->seq());
+        }
+    }
+
+    if (ins_map_.size() >= MAX_INS_SIZE && index < GetCommitedIndex()) {
+        auto ins = GetInstance(index, false);
+        if ((nullptr != ins) && (0 == ins->GetPendingSeq())) {
+            ins_map_.erase(index);
+            logdebug("GC paxos instance index %" PRIu64, index);
+        }
+    }
+
+    logdebug("INFO index %" PRIu64 " commited_index %" PRIu64 
+            " next_commited_index %" PRIu64, 
+            index, commited_index_, next_commited_index_);
     commited_index_ = next_commited_index_;
 }
 
@@ -277,14 +312,38 @@ bool PaxosImpl::CanFastProp(uint64_t prop_index)
     return prev_ins->GetStrictPropFlag();
 }
 
+void PaxosImpl::UpdateMaxIndex(uint64_t new_max_index)
+{
+    logdebug("new_max_index %" PRIu64 " max_index_ %" PRIu64, 
+            new_max_index, max_index_);
+    if (new_max_index > max_index_) {
+        max_index_ = new_max_index;
+    }
+}
+
 MessageType Step(
         PaxosImpl& paxos_impl, 
         const Message& req_msg, 
         PaxosInstance* disk_ins)
 {
-    auto ins = GetInstance(paxos_impl, req_msg.index(), disk_ins);
-    assert(nullptr != ins);
+//    if (req_msg.index() > paxos_impl.GetCommitedIndex() + MAX_INS_SIZE) {
+//        logerr("ERROR: req_msg.index %" PRIu64 " local max_index %" 
+//                PRIu64 " MAX_INS_SIZE %zu", 
+//                req_msg.index(), paxos_impl.GetMaxIndex(), 
+//                MAX_INS_SIZE);
+//
+//        paxos_impl.UpdateMaxIndex(paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
+//        // ignore
+//        return MessageType::NOOP;
+//    }
 
+    auto ins = GetInstance(paxos_impl, req_msg.index(), disk_ins);
+    if (nullptr == ins) {
+        assert(req_msg.index() > paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
+        assert(paxos_impl.GetMaxIndex() <= paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
+        return MessageType::NOOP;
+    }
+    assert(nullptr != ins);
     return ins->Step(req_msg);
 }
 
@@ -298,10 +357,16 @@ ProduceRsp(
     assert(req_msg.to() == paxos_impl.GetSelfId());
     assert(req_msg.logid() == paxos_impl.GetLogId());
 
-    auto ins = GetInstance(paxos_impl, req_msg.index(), disk_ins);
-    assert(nullptr != ins);
-
     vector<unique_ptr<Message>> vec_msg;
+    auto ins = GetInstance(paxos_impl, req_msg.index(), disk_ins);
+    if (nullptr == ins) {
+        assert(req_msg.index() > paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
+        assert(paxos_impl.GetMaxIndex() <= paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
+        assert(MessageType::NOOP == rsp_msg_type);
+        return vec_msg;
+    }
+
+    assert(nullptr != ins);
     auto rsp_msg = ins->ProduceRsp(req_msg, rsp_msg_type);
 
     logdebug("rsp_msg %p rsp_msg_type %d", 

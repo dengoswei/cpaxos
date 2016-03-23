@@ -68,6 +68,8 @@ public:
 
     int write(std::unique_ptr<paxos::HardState> hs);
 
+    int write(const std::vector<std::unique_ptr<paxos::HardState>>& vec_hs);
+
     std::tuple<int, std::unique_ptr<paxos::HardState>>
         read(uint64_t logid, uint64_t log_index);
 
@@ -91,6 +93,8 @@ public:
     }
 
     int send(std::unique_ptr<paxos::Message> msg);
+
+    int send(std::vector<std::unique_ptr<paxos::Message>> vec_msg);
 
     size_t apply(
             std::map<uint64_t, std::unique_ptr<paxos::Paxos>>& map_paxos);

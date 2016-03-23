@@ -42,6 +42,7 @@ public:
     ~PaxosImpl();
 
     // help function
+    void UpdateMaxIndex(uint64_t new_max_index);
     uint64_t GetMaxIndex() const { return max_index_; }
     uint64_t GetCommitedIndex() const { return commited_index_; }
     uint64_t GetNextCommitedIndex() const { return next_commited_index_; }
@@ -66,6 +67,10 @@ public:
     // may craete a new instance
     PaxosInstance* GetInstance(uint64_t index, bool create);
     void CommitStep(uint64_t index, uint32_t store_seq);
+
+    void CommitStep(
+            uint64_t index, 
+            const std::vector<std::unique_ptr<paxos::HardState>>& vec_hs);
 
     bool CanFastProp(uint64_t prop_index);
 
