@@ -4,12 +4,15 @@
 #include "paxos.h"
 #include "mem_utils.h"
 #include "id_utils.h"
+#include "hassert.h"
 
 
 using namespace std;
 using namespace paxos;
 using namespace test;
 using cutils::prop_num_compose;
+
+const uint32_t test_timeout = 10;
 
 
 void AssertCheckConfState(
@@ -75,7 +78,7 @@ TEST(PaxosTest, SimpleConstruct)
     map<uint64_t, unique_ptr<Paxos>> map_paxos;
 
     tie(map_storage, map_paxos) = 
-        build_paxos(logid, group_ids, sender, 0);
+        build_paxos(logid, test_timeout, group_ids, sender, 0);
     assert(map_paxos.size() == group_ids.size());
     assert(map_storage.size() == group_ids.size());
 
@@ -98,7 +101,7 @@ TEST(PaxosTest, SimplePropose)
     map<uint64_t, unique_ptr<Paxos>> map_paxos;
 
     tie(map_storage, map_paxos) = 
-        build_paxos(logid, group_ids, sender, 0);
+        build_paxos(logid, test_timeout, group_ids, sender, 0);
     assert(map_paxos.size() == group_ids.size());
     assert(map_storage.size() == group_ids.size());
 
@@ -170,7 +173,7 @@ TEST(PaxosTest, FastProp)
     map<uint64_t, unique_ptr<Paxos>> map_paxos;
 
     tie(map_storage, map_paxos) = 
-        build_paxos(logid, group_ids, sender, 0);
+        build_paxos(logid, test_timeout, group_ids, sender, 0);
     assert(map_paxos.size() == group_ids.size());
     assert(map_storage.size() == group_ids.size());
 
@@ -223,7 +226,7 @@ TEST(PaxosTest, RandomIterPropose)
     map<uint64_t, unique_ptr<Paxos>> map_paxos;
     
     tie(map_storage, map_paxos) = 
-        build_paxos(logid, group_ids, sender, 0);
+        build_paxos(logid, test_timeout, group_ids, sender, 0);
 
     auto reqid = 2ull;
     for (auto i = 0; i < 10; ++i) {
@@ -261,7 +264,7 @@ TEST(PaxosTest, PropTestWithMsgDrop)
     map<uint64_t, unique_ptr<StorageHelper>> map_storage;
     map<uint64_t, unique_ptr<Paxos>> map_paxos;
     tie(map_storage, map_paxos) = 
-        build_paxos(logid, group_ids, sender, 60);
+        build_paxos(logid, test_timeout, group_ids, sender, 60);
 
     auto selfid = 1ull;
     auto& paxos = map_paxos[selfid];
@@ -334,7 +337,7 @@ TEST(PaxosTest, ProposeCatchUp)
     map<uint64_t, unique_ptr<Paxos>> map_paxos;
 
     tie(map_storage, map_paxos) = 
-        build_paxos(logid, group_ids, sender, 0);
+        build_paxos(logid, test_timeout, group_ids, sender, 0);
     assert(map_paxos.size() == group_ids.size());
     assert(map_storage.size() == group_ids.size());
 
@@ -376,8 +379,86 @@ TEST(PaxosTest, ProposeCatchUp)
 
     for (auto peer_id : group_ids) {
         auto& peer_paxos = map_paxos[peer_id];
-        assert(peer_paxos->GetMaxIndex() == peer_paxos->GetCommitedIndex());
-        assert(paxos->GetCommitedIndex() == peer_paxos->GetCommitedIndex());
+        assert(peer_paxos->GetMaxIndex() == 
+                peer_paxos->GetCommitedIndex());
+        assert(paxos->GetCommitedIndex() == 
+                peer_paxos->GetCommitedIndex());
+    }
+}
+
+TEST(PaxosTest, ZeroIndex)
+{
+    auto logid = LOGID;
+    auto group_ids = GROUP_IDS;
+    
+    auto selfid = 1ull;
+    SendHelper sender{0};
+    map<uint64_t, unique_ptr<StorageHelper>> map_storage;
+    map<uint64_t, unique_ptr<Paxos>> map_paxos;
+
+    tie(map_storage, map_paxos) = 
+        build_paxos(logid, test_timeout, group_ids, sender, 0);
+
+    auto& paxos = map_paxos[selfid];
+    assert(nullptr != paxos);
+
+    // case 1
+    {
+        // zero index, nothing timeout
+        assert(true == sender.empty());
+        paxos::Message msg;
+        msg.set_type(paxos::MessageType::NOOP);
+        msg.set_logid(logid);
+        msg.set_index(0ull);
+        msg.set_to(selfid);
+        auto err = paxos->Step(msg);
+        assert(paxos::ErrorCode::OK == err);
+        assert(true == sender.empty());
+    }
+
+    // case 2
+    uint64_t reqid = 1ull;
+    uint64_t prop_index = 0;
+    {
+        auto err = paxos::ErrorCode::OK;
+        auto prop_value = genPropValue();
+        tie(err, prop_index) = paxos->Propose(0ull, reqid, prop_value);
+        assert(paxos::ErrorCode::OK == err);
+        assert(1ull == prop_index);
+        sender.drop_all();
+
+        assert(true == sender.empty());
+        paxos::Message msg;
+        msg.set_type(paxos::MessageType::NOOP);
+        msg.set_logid(logid);
+        msg.set_index(0ull);
+        msg.set_to(selfid);
+        err = paxos->Step(msg);
+        assert(paxos::ErrorCode::OK == err);
+        assert(true == sender.empty()); // nothing timeout
+    }
+
+    // case 3
+    {
+        usleep((test_timeout + 2) * 1000);
+        assert(true == sender.empty());
+        paxos::Message msg;
+        msg.set_type(paxos::MessageType::NOOP);
+        msg.set_logid(logid);
+        msg.set_index(0ull);
+        msg.set_to(selfid);
+        auto err = paxos->Step(msg);
+        assert(paxos::ErrorCode::OK == err);
+        assert(false == sender.empty()); // should be timeout
+
+        sender.apply_until(map_paxos);
+        assert(prop_index == paxos->GetCommitedIndex());
+
+        auto ret = paxos->CheckChosen(prop_index, reqid);
+        assert(1 == ret);
+
+        ret = paxos->CheckChosen(prop_index, 0);
+        assert(0 == ret);
     }
 }
 
@@ -415,7 +496,8 @@ TEST(PaxosTest, EmptySnapshotMeta)
             return 0;
         };
 
-    auto paxos = cutils::make_unique<Paxos>(selfid, meta, callback);
+    auto paxos = cutils::make_unique<Paxos>(
+            selfid, test_timeout, meta, callback);
     assert(nullptr != paxos);
     assert(0ull == paxos->GetMaxIndex());
     assert(0ull == paxos->GetCommitedIndex());
@@ -480,7 +562,8 @@ TEST(PaxosTest, SnapshotMetadataConstruct)
         meta.set_commited_index(test_index);
         callback.read = simple_read_cb;
 
-        auto paxos = cutils::make_unique<Paxos>(selfid, meta, callback);
+        auto paxos = cutils::make_unique<Paxos>(
+                selfid, test_timeout, meta, callback);
         assert(nullptr != paxos);
         assert(test_index == paxos->GetMaxIndex());
         assert(test_index == paxos->GetCommitedIndex());
@@ -506,7 +589,8 @@ TEST(PaxosTest, SnapshotMetadataConstruct)
         meta.set_commited_index(0);
         callback.read = simple_read_cb;
 
-        auto paxos = cutils::make_unique<Paxos>(selfid, meta, callback);
+        auto paxos = cutils::make_unique<Paxos>(
+                selfid, test_timeout, meta, callback);
         assert(nullptr != paxos);
         assert(test_index == paxos->GetMaxIndex());
         assert(test_index - 1 == paxos->GetCommitedIndex());

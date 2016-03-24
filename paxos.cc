@@ -14,8 +14,11 @@ std::chrono::milliseconds PAXOS_TIMEOUT{100};
 Paxos::Paxos(
         uint64_t logid, 
         uint64_t selfid, 
-        const std::set<uint64_t>& group_ids, PaxosCallBack callback)
-    : paxos_impl_(cutils::make_unique<PaxosImpl>(logid, selfid, group_ids))
+        uint32_t timeout, 
+        const std::set<uint64_t>& group_ids, 
+        PaxosCallBack callback)
+    : timeout_(timeout)
+    , paxos_impl_(cutils::make_unique<PaxosImpl>(logid, selfid, group_ids))
     , callback_(callback)
 {
     assert(nullptr != callback_.read);
@@ -25,9 +28,11 @@ Paxos::Paxos(
 
 Paxos::Paxos(
         uint64_t selfid, 
+        uint32_t timeout, 
         const paxos::SnapshotMetadata& meta, 
         PaxosCallBack callback)
-    : paxos_impl_(nullptr)
+    : timeout_(timeout)
+    , paxos_impl_(nullptr)
     , callback_(callback)
 {
     assert(nullptr != callback_.read);
@@ -158,11 +163,11 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
     std::vector<std::unique_ptr<Message>> vec_msg;
 
     uint64_t index = msg.index();
-    hassert(0 < index, "index %" PRIu64 " type %d peer %" 
-            PRIu64 " to %" PRIu64, 
-            msg.index(), static_cast<int>(msg.type()), 
-            msg.from(), msg.to());
-    assert(0 < index);
+//    hassert(0 < index, "index %" PRIu64 " type %d peer %" 
+//            PRIu64 " to %" PRIu64, 
+//            msg.index(), static_cast<int>(msg.type()), 
+//            msg.from(), msg.to());
+//    assert(0 < index);
 
     {
         // 1.
@@ -171,7 +176,7 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
         prev_commit_index = paxos_impl_->GetCommitedIndex();
 
         unique_ptr<PaxosInstance> disk_ins = nullptr;
-        if (index < paxos_impl_->GetCommitedIndex()) {
+        if (0 < index && index < paxos_impl_->GetCommitedIndex()) {
             auto ins = paxos_impl_->GetInstance(index, false);
             if (nullptr == ins) {
                 // re-construct disk_ins
@@ -201,7 +206,7 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
                 *paxos_impl_, msg, rsp_msg_type, disk_ins.get());
 
         std::unique_ptr<HardState> hs = nullptr;
-        if (nullptr == disk_ins.get()) {
+        if (0 < index && nullptr == disk_ins.get()) {
             auto ins = paxos_impl_->GetInstance(index, false);
             if (nullptr != ins) {
                 hs = ins->GetPendingHardState(paxos_impl_->GetLogId(), index);
@@ -210,20 +215,24 @@ paxos::ErrorCode Paxos::Step(const Message& msg)
 
         vector<unique_ptr<Message>> vec_try_prop_msg;
         tie(vec_hs, vec_try_prop_msg) = 
-            CheckTimeoutNoLock(msg.index(), PAXOS_TIMEOUT);
+            CheckTimeoutNoLock(msg.index(), timeout_);
 
         if (nullptr != hs) {
             vec_hs.push_back(move(hs));
         }
 
-        vec_msg.reserve(vec_msg.size() + vec_try_prop_msg.size());
-        for_each(vec_try_prop_msg.begin(), vec_try_prop_msg.end(), 
-                [&](unique_ptr<Message>& try_prop_msg) {
-                    assert(nullptr != try_prop_msg);
-                    vec_msg.push_back(move(try_prop_msg));
-                    assert(nullptr == try_prop_msg);
-                });
-        vec_try_prop_msg.clear();
+        if (false == vec_try_prop_msg.empty()) {
+            vec_msg.reserve(vec_msg.size() + vec_try_prop_msg.size());
+            for_each(
+                    vec_try_prop_msg.begin(), 
+                    vec_try_prop_msg.end(), 
+                    [&](unique_ptr<Message>& try_prop_msg) {
+                        assert(nullptr != try_prop_msg);
+                        vec_msg.push_back(move(try_prop_msg));
+                        assert(nullptr == try_prop_msg);
+                    });
+            vec_try_prop_msg.clear();
+        }
     }
 
     // 2.
@@ -272,7 +281,7 @@ std::tuple<
     std::vector<std::unique_ptr<paxos::HardState>>, 
     std::vector<std::unique_ptr<paxos::Message>>>
 Paxos::CheckTimeoutNoLock(
-        uint64_t exclude_index, std::chrono::milliseconds& timeout)
+        uint64_t exclude_index, const std::chrono::milliseconds& timeout)
 {
     vector<unique_ptr<HardState>> vec_hs;
     vector<unique_ptr<Message>> vec_msg;
@@ -450,7 +459,12 @@ int Paxos::CheckChosen(uint64_t index, uint64_t reqid)
 
     assert(nullptr != ins);
     assert(true == ins->IsChosen());
-    if (ins->GetAcceptedValue().reqid() != reqid) {
+    auto& accepted_value = ins->GetAcceptedValue();
+    logdebug("index %" PRIu64 " reqid %" PRIu64 
+            " accepted_value: reqid %" PRIu64 " value.size %zu", 
+            index, reqid, accepted_value.reqid(), 
+            accepted_value.data().size());
+    if (accepted_value.reqid() != reqid) {
         return 0;
     }
 

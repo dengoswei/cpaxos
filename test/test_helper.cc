@@ -360,12 +360,22 @@ bool SendHelper::empty()
     return msg_queue_.empty();
 }
 
+size_t SendHelper::drop_all()
+{
+    lock_guard<mutex> lock(queue_mutex_);
+    auto size = msg_queue_.size();
+    msg_queue_.clear();
+    return size;
+}
+
 
 std::tuple<
     std::map<uint64_t, std::unique_ptr<test::StorageHelper>>, 
     std::map<uint64_t, std::unique_ptr<paxos::Paxos>>>
 build_paxos(
-        uint64_t logid, const std::set<uint64_t>& group_ids, 
+        uint64_t logid, 
+        uint32_t timeout, 
+        const std::set<uint64_t>& group_ids, 
         SendHelper& sender, 
         int disk_fail_ratio)
 {
@@ -400,7 +410,8 @@ build_paxos(
                 return sender.send(move(vec_msg));
             };
 
-        auto paxos = cutils::make_unique<Paxos>(logid, id, group_ids, callback);
+        auto paxos = cutils::make_unique<Paxos>(
+                logid, id, timeout, group_ids, callback);
         assert(nullptr != paxos);
 
         map_storage[id] = move(ustorage);

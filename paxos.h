@@ -36,11 +36,15 @@ class Paxos {
 
 public: 
     Paxos(
-        uint64_t logid, uint64_t selfid, 
-        const std::set<uint64_t>& group_ids, PaxosCallBack callback);
+        uint64_t logid, 
+        uint64_t selfid, 
+        uint32_t timeout, 
+        const std::set<uint64_t>& group_ids, 
+        PaxosCallBack callback);
 
     Paxos(
         uint64_t selfid, 
+        uint32_t timeout, 
         const SnapshotMetadata& meta, 
         PaxosCallBack callback);
 
@@ -83,9 +87,12 @@ private:
     std::tuple<
         std::vector<std::unique_ptr<paxos::HardState>>, 
         std::vector<std::unique_ptr<paxos::Message>>>
-    CheckTimeoutNoLock(uint64_t exclude_index, std::chrono::milliseconds& timeout);
+    CheckTimeoutNoLock(
+            uint64_t exclude_index, 
+            const std::chrono::milliseconds& timeout);
 
 private:
+    const std::chrono::milliseconds timeout_;
     std::mutex prop_mutex_;
     std::mutex paxos_mutex_;
     std::condition_variable paxos_cv_;

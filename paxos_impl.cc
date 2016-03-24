@@ -326,21 +326,16 @@ MessageType Step(
         const Message& req_msg, 
         PaxosInstance* disk_ins)
 {
-//    if (req_msg.index() > paxos_impl.GetCommitedIndex() + MAX_INS_SIZE) {
-//        logerr("ERROR: req_msg.index %" PRIu64 " local max_index %" 
-//                PRIu64 " MAX_INS_SIZE %zu", 
-//                req_msg.index(), paxos_impl.GetMaxIndex(), 
-//                MAX_INS_SIZE);
-//
-//        paxos_impl.UpdateMaxIndex(paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
-//        // ignore
-//        return MessageType::NOOP;
-//    }
+    if (0 == req_msg.index()) {
+        return MessageType::NOOP;
+    }
 
     auto ins = GetInstance(paxos_impl, req_msg.index(), disk_ins);
     if (nullptr == ins) {
-        assert(req_msg.index() > paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
-        assert(paxos_impl.GetMaxIndex() <= paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
+        assert(req_msg.index() > 
+                paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
+        assert(paxos_impl.GetMaxIndex() <= 
+                paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
         return MessageType::NOOP;
     }
     assert(nullptr != ins);
@@ -358,10 +353,16 @@ ProduceRsp(
     assert(req_msg.logid() == paxos_impl.GetLogId());
 
     vector<unique_ptr<Message>> vec_msg;
+    if (0 == req_msg.index()) {
+        return vec_msg;
+    }
+
     auto ins = GetInstance(paxos_impl, req_msg.index(), disk_ins);
     if (nullptr == ins) {
-        assert(req_msg.index() > paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
-        assert(paxos_impl.GetMaxIndex() <= paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
+        assert(req_msg.index() > 
+                paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
+        assert(paxos_impl.GetMaxIndex() <= 
+                paxos_impl.GetCommitedIndex() + MAX_INS_SIZE);
         assert(MessageType::NOOP == rsp_msg_type);
         return vec_msg;
     }

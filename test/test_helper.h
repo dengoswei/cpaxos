@@ -54,6 +54,7 @@ std::tuple<
     std::map<uint64_t, std::unique_ptr<paxos::Paxos>>>
 build_paxos(
             uint64_t logid, 
+            uint32_t timeout, 
             const std::set<uint64_t>& group_ids, 
             SendHelper& sender, int disk_fail_ratio);
 
@@ -103,6 +104,8 @@ public:
             std::map<uint64_t, std::unique_ptr<paxos::Paxos>>& map_paxos);
 
     bool empty();
+
+    size_t drop_all();
 
 private:
     const int drop_ratio_;

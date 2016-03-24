@@ -1,6 +1,6 @@
 
 CPPFLAGS += -isystem $(GTEST_DIR)/include -std=c++11 -stdlib=libc++
-CXXFLAGS += -g -Wall -Wextra # -D TEST_DEBUG
+CXXFLAGS += -g -Wall -Wextra -D TEST_DEBUG
 
 TESTS = utils_test paxos_instance_test paxos_test paxos_pb_test config_test glog_test
 
