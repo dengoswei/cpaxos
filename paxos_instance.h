@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <chrono>
+#include "utils.h"
 #include "id_utils.h"
 #include "paxos.pb.h"
 

@@ -1,4 +1,5 @@
 #include <deque>
+#include <algorithm>
 #include "paxos.h"
 #include "mem_utils.h"
 #include "log_utils.h"

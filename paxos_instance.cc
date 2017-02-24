@@ -630,7 +630,7 @@ bool PaxosInstanceImpl::updateAccepted(
         if(0ull != accepted_num_) {
             // do fast accept only when 0ull == accepted_num_
             // => so only once!
-            return false; 
+            return true; 
         }
         assert(0ull == accepted_num_);
     }

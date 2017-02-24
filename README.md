@@ -1,5 +1,6 @@
 # cpaxos
 
-so..
+*IMPORTANT*
 
-deps: protobuf 
+this is not the version we used in wechat memkv.
+
